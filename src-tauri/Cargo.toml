@@ -21,3 +21,5 @@ ldk-node = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 dirs = "6"
 log = "0.4"
+nostr = "0.39"
+keyring = { version = "3", features = ["apple-native"] }
