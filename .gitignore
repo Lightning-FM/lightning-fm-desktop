@@ -1,0 +1,39 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Tauri
+/src-tauri/target/
+/src-tauri/WixTools/
+/src-tauri/Frameworks/
+
+# Node (React frontend)
+node_modules/
+dist/
+.next/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# LDK data (local dev node state)
+.lightning-fm/
+
+# Build artifacts
+*.dmg
+*.app
+*.msi
+*.AppImage
+*.deb
