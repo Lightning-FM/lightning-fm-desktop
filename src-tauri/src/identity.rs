@@ -122,3 +122,207 @@ fn identity_info_from_keys(keys: &Keys, display_name: Option<String>) -> Identit
         display_name,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── Pure key operation tests ────────────────────────────
+
+    #[test]
+    fn generate_keypair_produces_valid_identity() {
+        let keys = Keys::generate();
+        let info = identity_info_from_keys(&keys, None);
+
+        assert!(info.npub.starts_with("npub1"), "npub should start with npub1");
+        assert_eq!(info.pubkey_hex.len(), 64, "pubkey hex should be 64 chars");
+        assert!(info.has_nsec);
+        assert!(info.display_name.is_none());
+    }
+
+    #[test]
+    fn generate_keypair_is_unique() {
+        let keys1 = Keys::generate();
+        let keys2 = Keys::generate();
+        assert_ne!(
+            keys1.public_key().to_hex(),
+            keys2.public_key().to_hex(),
+            "Two generated keypairs should not be identical"
+        );
+    }
+
+    #[test]
+    fn import_nsec_bech32_roundtrips() {
+        // Generate a key, export as bech32, reimport — should get same pubkey
+        let original = Keys::generate();
+        let nsec = original.secret_key().to_bech32().unwrap();
+        assert!(nsec.starts_with("nsec1"));
+
+        let secret_key = SecretKey::from_bech32(&nsec).unwrap();
+        let reimported = Keys::new(secret_key);
+
+        assert_eq!(
+            original.public_key().to_hex(),
+            reimported.public_key().to_hex(),
+            "Reimported key should produce same pubkey"
+        );
+    }
+
+    #[test]
+    fn import_nsec_hex_roundtrips() {
+        // Generate a key, export as hex, reimport — should get same pubkey
+        let original = Keys::generate();
+        let hex = original.secret_key().to_secret_hex();
+        assert_eq!(hex.len(), 64);
+
+        let secret_key = SecretKey::parse(&hex).unwrap();
+        let reimported = Keys::new(secret_key);
+
+        assert_eq!(
+            original.public_key().to_hex(),
+            reimported.public_key().to_hex(),
+            "Reimported hex key should produce same pubkey"
+        );
+    }
+
+    #[test]
+    fn import_detects_bech32_vs_hex() {
+        let keys = Keys::generate();
+
+        // bech32 path
+        let nsec = keys.secret_key().to_bech32().unwrap();
+        assert!(nsec.starts_with("nsec1"), "bech32 nsec should be detected");
+
+        // hex path
+        let hex = keys.secret_key().to_secret_hex();
+        assert!(!hex.starts_with("nsec1"), "hex should not be detected as bech32");
+    }
+
+    #[test]
+    fn import_rejects_invalid_nsec() {
+        let result = SecretKey::from_bech32("nsec1invalidgarbage");
+        assert!(result.is_err(), "Invalid bech32 should fail");
+    }
+
+    #[test]
+    fn import_rejects_invalid_hex() {
+        let result = SecretKey::parse("not_a_valid_hex_key");
+        assert!(result.is_err(), "Invalid hex should fail");
+    }
+
+    #[test]
+    fn identity_info_includes_display_name_when_set() {
+        let keys = Keys::generate();
+        let info = identity_info_from_keys(&keys, Some("Alice".to_string()));
+        assert_eq!(info.display_name, Some("Alice".to_string()));
+    }
+
+    #[test]
+    fn export_nsec_produces_bech32() {
+        let keys = Keys::generate();
+        let exported = export_nsec(&keys).unwrap();
+        assert!(exported.starts_with("nsec1"), "Exported nsec should be bech32");
+
+        // Verify it reimports to the same key
+        let secret_key = SecretKey::from_bech32(&exported).unwrap();
+        let reimported = Keys::new(secret_key);
+        assert_eq!(keys.public_key().to_hex(), reimported.public_key().to_hex());
+    }
+
+    // ─── Keychain integration tests ─────────────────────────
+    // Use a test-specific service name to avoid touching real keychain
+
+    const TEST_SERVICE: &str = "fm.lightning.desktop.test";
+    const TEST_ENTRY: &str = "nostr-nsec-test";
+
+    fn test_store(keys: &Keys) -> Result<(), String> {
+        let entry = Entry::new(TEST_SERVICE, TEST_ENTRY)
+            .map_err(|e| format!("Keyring error: {}", e))?;
+        let hex = keys.secret_key().to_secret_hex();
+        entry.set_password(&hex)
+            .map_err(|e| format!("Store error: {}", e))?;
+        Ok(())
+    }
+
+    fn test_load() -> Result<Option<Keys>, String> {
+        let entry = Entry::new(TEST_SERVICE, TEST_ENTRY)
+            .map_err(|e| format!("Keyring error: {}", e))?;
+        match entry.get_password() {
+            Ok(hex) => {
+                let sk = SecretKey::parse(&hex)
+                    .map_err(|e| format!("Parse error: {}", e))?;
+                Ok(Some(Keys::new(sk)))
+            }
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(format!("Load error: {}", e)),
+        }
+    }
+
+    fn test_delete() -> Result<(), String> {
+        let entry = Entry::new(TEST_SERVICE, TEST_ENTRY)
+            .map_err(|e| format!("Keyring error: {}", e))?;
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!("Delete error: {}", e)),
+        }
+    }
+
+    #[test]
+    fn keychain_store_load_roundtrip() {
+        // Clean up any leftover test data
+        let _ = test_delete();
+
+        let keys = Keys::generate();
+        test_store(&keys).unwrap();
+
+        let loaded = test_load().unwrap();
+        assert!(loaded.is_some(), "Should load stored key");
+        assert_eq!(
+            keys.public_key().to_hex(),
+            loaded.unwrap().public_key().to_hex(),
+            "Loaded key should match stored key"
+        );
+
+        // Clean up
+        test_delete().unwrap();
+    }
+
+    #[test]
+    fn keychain_load_returns_none_when_empty() {
+        // Ensure clean state
+        let _ = test_delete();
+
+        let loaded = test_load().unwrap();
+        assert!(loaded.is_none(), "Should return None when no key stored");
+    }
+
+    #[test]
+    fn keychain_delete_is_idempotent() {
+        let _ = test_delete();
+
+        // Delete when nothing is there — should not error
+        let result = test_delete();
+        assert!(result.is_ok(), "Deleting non-existent entry should succeed");
+    }
+
+    #[test]
+    fn keychain_overwrite_replaces_key() {
+        let _ = test_delete();
+
+        let keys1 = Keys::generate();
+        let keys2 = Keys::generate();
+
+        test_store(&keys1).unwrap();
+        test_store(&keys2).unwrap();
+
+        let loaded = test_load().unwrap().unwrap();
+        assert_eq!(
+            keys2.public_key().to_hex(),
+            loaded.public_key().to_hex(),
+            "Second store should overwrite first"
+        );
+
+        test_delete().unwrap();
+    }
+}
