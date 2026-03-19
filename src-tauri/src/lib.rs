@@ -1,10 +1,11 @@
 // Lightning FM — Tauri backend entry point
-// Manages LDK node, Nostr identity, relay connections, and audio uploads.
+// Manages LDK node, Nostr identity, relay connections, audio uploads, and playback.
 
 mod node;
 mod identity;
 mod relay;
 mod upload;
+mod playback;
 mod commands;
 
 use tauri::Manager;
@@ -20,6 +21,8 @@ use commands::{
     relay_connect, browse_tracks,
     // Upload & publish
     upload_track,
+    // Playback
+    playback_fetch, playback_load_local, playback_cache_stats,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -48,6 +51,10 @@ pub fn run() {
             browse_tracks,
             // Upload & publish
             upload_track,
+            // Playback
+            playback_fetch,
+            playback_load_local,
+            playback_cache_stats,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Lightning FM")

@@ -31,6 +31,9 @@ Thumbs.db
 # LDK data (local dev node state)
 .lightning-fm/
 
+# Test audio data (not committed — 85MB+)
+test-data/
+
 # Build artifacts
 *.dmg
 *.app

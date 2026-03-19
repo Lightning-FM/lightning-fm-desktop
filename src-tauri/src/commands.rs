@@ -241,3 +241,48 @@ pub async fn upload_track(
         created_at: nostr_sdk::Timestamp::now().as_u64(),
     })
 }
+
+// ─── Playback Commands ──────────────────────────────────────
+
+/// Fetch audio for playback. Checks local cache first, then tries URLs in order.
+/// Returns the local file path for the <audio> element and whether it was artist-direct.
+#[derive(serde::Serialize)]
+pub struct PlaybackResult {
+    pub cache_path: String,
+    pub artist_direct: bool,
+}
+
+#[tauri::command]
+pub async fn playback_fetch(
+    hash: String,
+    urls: Vec<String>,
+) -> Result<PlaybackResult, String> {
+    let (path, artist_direct) = crate::playback::fetch_and_cache(&hash, urls).await?;
+    Ok(PlaybackResult { cache_path: path, artist_direct })
+}
+
+/// Load a local file for dev testing — hashes it, caches it, returns path + hash.
+#[derive(serde::Serialize)]
+pub struct LocalLoadResult {
+    pub hash: String,
+    pub cache_path: String,
+}
+
+#[tauri::command]
+pub fn playback_load_local(file_path: String) -> Result<LocalLoadResult, String> {
+    let (hash, path) = crate::playback::load_local_file(&file_path)?;
+    Ok(LocalLoadResult { hash, cache_path: path })
+}
+
+/// Get cache stats (number of cached files, total size in bytes).
+#[derive(serde::Serialize)]
+pub struct CacheStats {
+    pub count: usize,
+    pub total_bytes: u64,
+}
+
+#[tauri::command]
+pub fn playback_cache_stats() -> CacheStats {
+    let (count, total_bytes) = crate::playback::cache_stats();
+    CacheStats { count, total_bytes }
+}
