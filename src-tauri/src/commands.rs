@@ -6,6 +6,7 @@ use crate::node::{LdkState, NodeInfo, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
 use crate::relay::{RelayState, TrackInfo};
 use crate::credits::{CreditsState, CreditsInfo};
+use crate::streaming::{StreamingState, StreamSession};
 use nostr_sdk::prelude::*;
 use std::path::Path;
 
@@ -353,4 +354,119 @@ pub fn credits_deduct(amount: u64, state: State<CreditsState>) -> Result<Credits
         return Err("Insufficient credits".to_string());
     }
     Ok(crate::credits::get_credits_info(&state))
+}
+
+// ─── Streaming Payment Commands ─────────────────────────────
+
+/// Start a streaming session for a track
+#[tauri::command]
+pub fn stream_start(
+    track_id: String,
+    artist_pubkey: String,
+    artist_direct: bool,
+    state: State<StreamingState>,
+) -> Result<StreamSession, String> {
+    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
+    let session = StreamSession::new(&track_id, &artist_pubkey, artist_direct);
+    *session_lock = Some(session.clone());
+    Ok(session)
+}
+
+/// Process a payment interval — deducts credits and records the payment.
+/// Returns the updated session and payment details.
+/// The frontend calls this every 60 seconds while audio is playing.
+#[derive(serde::Serialize)]
+pub struct IntervalResult {
+    pub session: StreamSession,
+    pub artist_sats: u64,
+    pub platform_sats: u64,
+    pub listener_sats: u64,
+    pub credits_remaining: u64,
+    pub credits_depleted: bool,
+}
+
+#[tauri::command]
+pub fn stream_tick(
+    streaming_state: State<StreamingState>,
+    credits_state: State<CreditsState>,
+) -> Result<IntervalResult, String> {
+    let mut session_lock = streaming_state.session.lock().map_err(|e| e.to_string())?;
+    let session = session_lock.as_mut()
+        .ok_or("No active streaming session")?;
+
+    if !session.is_playing {
+        return Err("Session is paused".to_string());
+    }
+
+    // Calculate the split
+    let (artist_sats, platform_sats) = crate::streaming::calculate_split(session.artist_direct);
+    let listener_cost = crate::streaming::listener_cost_per_interval();
+
+    // Deduct from credits (or wallet later)
+    let success = crate::credits::deduct_credits(&credits_state, listener_cost);
+    let credits_depleted = !success;
+
+    if success {
+        // Record the payment in the session
+        session.record_payment();
+
+        // TODO: Send actual keysend via LDK here
+        // For now, we track the payment in session state.
+        // When LDK event loop is wired (review tracker item),
+        // this is where we call:
+        //   node.spontaneous_payment().send(artist_pubkey, amount_msat, tlv_records)
+        log::info!(
+            "Stream tick: {} sats to artist ({}), {} sats platform rake. Track: {}",
+            artist_sats,
+            if session.artist_direct { "direct" } else { "mirror" },
+            platform_sats,
+            session.track_id,
+        );
+    }
+
+    let credits_remaining = *credits_state.credits_remaining.lock().unwrap();
+
+    Ok(IntervalResult {
+        session: session.clone(),
+        artist_sats,
+        platform_sats,
+        listener_sats: listener_cost,
+        credits_remaining,
+        credits_depleted,
+    })
+}
+
+/// Pause the active streaming session
+#[tauri::command]
+pub fn stream_pause(state: State<StreamingState>) -> Result<StreamSession, String> {
+    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
+    let session = session_lock.as_mut()
+        .ok_or("No active streaming session")?;
+    session.pause();
+    Ok(session.clone())
+}
+
+/// Resume the active streaming session
+#[tauri::command]
+pub fn stream_resume(state: State<StreamingState>) -> Result<StreamSession, String> {
+    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
+    let session = session_lock.as_mut()
+        .ok_or("No active streaming session")?;
+    session.resume();
+    Ok(session.clone())
+}
+
+/// Stop the active streaming session and return final stats
+#[tauri::command]
+pub fn stream_stop(state: State<StreamingState>) -> Result<StreamSession, String> {
+    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
+    session_lock.take()
+        .ok_or("No active streaming session".to_string())
+}
+
+/// Get current streaming session info
+#[tauri::command]
+pub fn stream_info(state: State<StreamingState>) -> Result<Option<StreamSession>, String> {
+    let session_lock = state.session.lock().map_err(|e| e.to_string())?;
+    Ok(session_lock.clone())
 }

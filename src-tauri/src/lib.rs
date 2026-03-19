@@ -1,5 +1,4 @@
 // Lightning FM — Tauri backend entry point
-// Manages LDK node, Nostr identity, relay connections, audio playback, and credits.
 
 mod node;
 mod identity;
@@ -7,6 +6,7 @@ mod relay;
 mod upload;
 mod playback;
 mod credits;
+mod streaming;
 mod commands;
 
 use tauri::Manager;
@@ -14,6 +14,7 @@ use node::LdkState;
 use identity::IdentityState;
 use relay::RelayState;
 use credits::CreditsState;
+use streaming::StreamingState;
 use commands::{
     // LDK node
     ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address,
@@ -27,6 +28,8 @@ use commands::{
     playback_fetch, playback_load_local, playback_cache_stats, playback_start,
     // Credits
     credits_info, credits_deduct,
+    // Streaming payments
+    stream_start, stream_tick, stream_pause, stream_resume, stream_stop, stream_info,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,33 +40,22 @@ pub fn run() {
         .manage(IdentityState::new())
         .manage(RelayState::new())
         .manage(CreditsState::new())
+        .manage(StreamingState::new())
         .invoke_handler(tauri::generate_handler![
             // LDK node
-            ldk_start,
-            ldk_stop,
-            ldk_get_info,
-            ldk_get_balance,
-            ldk_list_channels,
-            ldk_new_address,
+            ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address,
             // Nostr identity
-            identity_check,
-            identity_create,
-            identity_import,
-            identity_export_nsec,
-            identity_delete,
+            identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
             // Relay & browse
-            relay_connect,
-            browse_tracks,
+            relay_connect, browse_tracks,
             // Upload & publish
             upload_track,
             // Playback
-            playback_fetch,
-            playback_load_local,
-            playback_cache_stats,
-            playback_start,
+            playback_fetch, playback_load_local, playback_cache_stats, playback_start,
             // Credits
-            credits_info,
-            credits_deduct,
+            credits_info, credits_deduct,
+            // Streaming payments
+            stream_start, stream_tick, stream_pause, stream_resume, stream_stop, stream_info,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Lightning FM")
