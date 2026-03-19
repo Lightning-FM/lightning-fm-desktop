@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 use std::sync::Mutex;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Payment interval in seconds
 pub const INTERVAL_SECS: u64 = 60;
@@ -16,8 +16,12 @@ pub const SATS_PER_INTERVAL: u64 = 100;
 pub const MIRROR_RAKE_PERCENT: u64 = 10;
 
 /// TLV type for Lightning FM custom records in keysend
+/// Used when actual LDK keysend is wired up (review tracker item)
+#[allow(dead_code)]
 pub const TLV_TRACK_ID: u64 = 696969;
+#[allow(dead_code)]
 pub const TLV_LISTENER_PUBKEY: u64 = 696970;
+#[allow(dead_code)]
 pub const TLV_TIMESTAMP: u64 = 696971;
 
 // ─── Rake Calculation ────────────────────────────────────────

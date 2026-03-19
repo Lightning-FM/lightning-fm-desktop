@@ -157,19 +157,6 @@ mod tests {
     use super::*;
     use std::fs;
 
-    // ─── Helper: create a temp "cache" dir for isolated tests ────
-
-    fn test_cache_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join("lightning-fm-test-cache");
-        let _ = fs::create_dir_all(&dir);
-        dir
-    }
-
-    fn cleanup_test_cache() {
-        let dir = test_cache_dir();
-        let _ = fs::remove_dir_all(&dir);
-    }
-
     // ─── SHA-256 hashing tests ───────────────────────────────────
 
     #[test]

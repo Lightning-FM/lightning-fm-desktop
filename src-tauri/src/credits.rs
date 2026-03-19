@@ -8,7 +8,9 @@ use std::sync::Mutex;
 const DEFAULT_WELCOME_CREDITS: u64 = 1000; // sats
 
 /// Funding state — determines what the listener can do
+/// Funded variant used when Strike/NWC wallet is wired up (Phase 3)
 #[derive(Serialize, Clone, Debug)]
+#[allow(dead_code)]
 pub enum FundingStatus {
     /// Has sats in wallet (Strike, NWC, or manual deposit)
     Funded { balance_sats: u64 },
