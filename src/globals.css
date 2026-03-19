@@ -10,8 +10,7 @@
 
 @import "tailwindcss";
 
-/* Load fonts directly — Next.js handles this via next/font on the landing page */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;600;700&display=swap');
+/* Fonts loaded via <link> in index.html to avoid @import ordering issues */
 
 @custom-variant dark (&:is(.dark *));
 
