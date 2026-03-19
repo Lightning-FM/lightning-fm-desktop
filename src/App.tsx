@@ -192,8 +192,16 @@ function App() {
 
     // Play audio
     if (audioRef.current) {
+      console.log("Playing audio from:", track.audioSrc);
       audioRef.current.src = track.audioSrc;
-      audioRef.current.play();
+      audioRef.current.play().catch((e) => {
+        console.error("Audio play failed:", e);
+        // Fallback: try direct file path with asset protocol
+        const assetUrl = `asset://localhost/${encodeURIComponent(track.cachePath)}`;
+        console.log("Trying asset URL:", assetUrl);
+        audioRef.current!.src = assetUrl;
+        audioRef.current!.play().catch((e2) => console.error("Asset fallback also failed:", e2));
+      });
       setIsPlaying(true);
     }
   }
@@ -225,9 +233,9 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      {/* ── Status Bar ── */}
-      <div className="h-8 flex items-center px-4 gap-4 border-b border-border bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* ── Status Bar (pinned top) ── */}
+      <div className="shrink-0 h-8 flex items-center px-4 gap-4 border-b border-border bg-background">
         <span className="font-label-mono text-amber">⚡ Lightning FM</span>
         <span className="font-small text-muted-foreground">
           {tracks.length} tracks
@@ -244,10 +252,10 @@ function App() {
         )}
       </div>
 
-      {/* ── Main Content ── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── Nav ── */}
-        <div className="w-48 border-r border-border p-4 flex flex-col gap-1">
+      {/* ── Main Content (fills between status bar and player bar) ── */}
+      <div className="flex flex-1 min-h-0">
+        {/* ── Nav (pinned left) ── */}
+        <div className="shrink-0 w-48 border-r border-border p-4 flex flex-col gap-1 overflow-y-auto">
           <span className="font-label-mono text-muted-foreground uppercase tracking-wider mb-2">Navigate</span>
           <span className="font-body-mono text-amber px-2 py-1 bg-amber/10 border border-amber">≡ Library</span>
           <span className="font-body-mono text-secondary-foreground px-2 py-1 hover:text-foreground cursor-pointer">◎ Discover</span>
@@ -255,8 +263,8 @@ function App() {
           <span className="font-body-mono text-secondary-foreground px-2 py-1 hover:text-foreground cursor-pointer">⚙ Settings</span>
         </div>
 
-        {/* ── Track Table ── */}
-        <div className="flex-1 overflow-y-auto">
+        {/* ── Track Table (scrollable center) ── */}
+        <div className="flex-1 overflow-y-auto min-h-0">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -308,9 +316,9 @@ function App() {
         </div>
       </div>
 
-      {/* ── Player Bar ── */}
+      {/* ── Player Bar (pinned bottom) ── */}
       {activeTrack && (
-        <div className="h-16 border-t border-border bg-card flex items-center px-4 gap-4">
+        <div className="shrink-0 h-16 border-t border-border bg-card flex items-center px-4 gap-4">
           {/* Track info */}
           <div className="w-48 min-w-0">
             <div className="font-body-mono text-foreground truncate">{activeTrack.title}</div>
