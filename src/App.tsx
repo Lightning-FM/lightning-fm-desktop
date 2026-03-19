@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import "./globals.css";
 
 // Identity info returned from Rust backend
 interface IdentityInfo {
