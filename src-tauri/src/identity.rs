@@ -2,7 +2,7 @@
 // Handles keypair generation, OS keychain storage, and identity retrieval.
 // Lightning and Nostr keys are SEPARATE — this module only manages Nostr keys.
 
-use nostr::prelude::*;
+use nostr_sdk::prelude::*;
 use keyring::Entry;
 use serde::Serialize;
 use std::sync::Mutex;

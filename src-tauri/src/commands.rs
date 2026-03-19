@@ -4,7 +4,9 @@
 use tauri::State;
 use crate::node::{LdkState, NodeInfo, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
-use nostr::prelude::*;
+use crate::relay::{RelayState, TrackInfo};
+use nostr_sdk::prelude::*;
+use std::path::Path;
 
 // ─── LDK Node Commands ──────────────────────────────────────
 
@@ -81,13 +83,10 @@ pub fn ldk_new_address(state: State<LdkState>) -> Result<String, String> {
 
 // ─── Nostr Identity Commands ────────────────────────────────
 
-/// Check if there's a stored identity in the OS keychain.
-/// Called on app launch to determine which onboarding path to show.
 #[tauri::command]
 pub fn identity_check(state: State<IdentityState>) -> Result<Option<IdentityInfo>, String> {
     let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
 
-    // If already loaded in memory, return it
     if let Some(ref keys) = *keys_lock {
         return Ok(Some(crate::identity::IdentityInfo {
             npub: keys.public_key().to_bech32().unwrap_or_default(),
@@ -97,18 +96,15 @@ pub fn identity_check(state: State<IdentityState>) -> Result<Option<IdentityInfo
         }));
     }
 
-    // Try loading from keychain
     match crate::identity::load_identity_from_keychain()? {
         Some((keys, info)) => {
             *keys_lock = Some(keys);
             Ok(Some(info))
         }
-        None => Ok(None), // No stored identity — show onboarding
+        None => Ok(None),
     }
 }
 
-/// Create a new Nostr identity (keypair generation + keychain storage).
-/// This is the "new to Nostr" onboarding path.
 #[tauri::command]
 pub fn identity_create(state: State<IdentityState>) -> Result<IdentityInfo, String> {
     let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
@@ -122,8 +118,6 @@ pub fn identity_create(state: State<IdentityState>) -> Result<IdentityInfo, Stri
     Ok(info)
 }
 
-/// Import an existing nsec (bech32 or hex).
-/// For users who already have a Nostr identity and want to bring it.
 #[tauri::command]
 pub fn identity_import(nsec: String, state: State<IdentityState>) -> Result<IdentityInfo, String> {
     let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
@@ -133,8 +127,6 @@ pub fn identity_import(nsec: String, state: State<IdentityState>) -> Result<Iden
     Ok(info)
 }
 
-/// Export the nsec as bech32 for backup.
-/// User explicitly requests this — we don't show it unprompted.
 #[tauri::command]
 pub fn identity_export_nsec(state: State<IdentityState>) -> Result<String, String> {
     let keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
@@ -145,7 +137,6 @@ pub fn identity_export_nsec(state: State<IdentityState>) -> Result<String, Strin
     }
 }
 
-/// Delete the stored identity from keychain and memory.
 #[tauri::command]
 pub fn identity_delete(state: State<IdentityState>) -> Result<String, String> {
     let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
@@ -153,4 +144,100 @@ pub fn identity_delete(state: State<IdentityState>) -> Result<String, String> {
     crate::identity::delete_identity()?;
     *keys_lock = None;
     Ok("Identity deleted".to_string())
+}
+
+// ─── Relay & Browse Commands ────────────────────────────────
+
+/// Connect to Nostr relays. Requires an identity to be loaded.
+#[tauri::command]
+pub async fn relay_connect(
+    identity_state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<String, String> {
+    let keys = {
+        let keys_lock = identity_state.keys.lock().map_err(|e| e.to_string())?;
+        keys_lock.clone().ok_or("No identity loaded. Create or import one first.")?
+    };
+
+    let client = crate::relay::connect(&keys).await?;
+    let mut client_lock = relay_state.client.lock().await;
+    *client_lock = Some(client);
+
+    Ok("Connected to relays".to_string())
+}
+
+/// Fetch all tracks from connected relays
+#[tauri::command]
+pub async fn browse_tracks(
+    relay_state: State<'_, RelayState>,
+) -> Result<Vec<TrackInfo>, String> {
+    let client_lock = relay_state.client.lock().await;
+
+    match client_lock.as_ref() {
+        Some(client) => crate::relay::fetch_tracks(client).await,
+        None => Err("Not connected to relays. Call relay_connect first.".to_string()),
+    }
+}
+
+// ─── Upload & Publish Commands ──────────────────────────────
+
+/// Upload an audio file to Blossom and publish track metadata to Nostr.
+/// This is the artist upload flow: file → SHA-256 → Blossom → kind 31337.
+#[tauri::command]
+pub async fn upload_track(
+    file_path: String,
+    title: String,
+    slug: String,
+    duration_secs: Option<u64>,
+    preview_secs: Option<u64>,
+    identity_state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<TrackInfo, String> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    // Get keys for Blossom auth and event signing
+    let keys = {
+        let keys_lock = identity_state.keys.lock().map_err(|e| e.to_string())?;
+        keys_lock.clone().ok_or("No identity loaded")?
+    };
+
+    // Upload to Blossom
+    let upload = crate::upload::upload_to_blossom(path, &keys).await?;
+
+    // Publish kind 31337 to relays
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Not connected to relays")?;
+
+    let event_id = crate::relay::publish_track(
+        client,
+        &title,
+        &slug,
+        duration_secs,
+        &upload.sha256,
+        &upload.url,
+        None, // fallback_url — artist is the primary source
+        &upload.mime_type,
+        upload.size,
+        preview_secs,
+    ).await?;
+
+    Ok(TrackInfo {
+        event_id,
+        artist_pubkey: keys.public_key().to_hex(),
+        artist_npub: keys.public_key().to_bech32().unwrap_or_default(),
+        title,
+        slug,
+        duration_secs,
+        audio_hash: Some(upload.sha256),
+        audio_url: Some(upload.url),
+        fallback_url: None,
+        mime_type: Some(upload.mime_type),
+        file_size: Some(upload.size),
+        preview_secs,
+        created_at: nostr_sdk::Timestamp::now().as_u64(),
+    })
 }
