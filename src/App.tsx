@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import "./globals.css";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -141,7 +140,7 @@ function App() {
             artist: artistGroup.artist,
             hash: result.hash,
             cachePath: result.cache_path,
-            audioSrc: convertFileSrc(result.cache_path),
+            audioSrc: "", // loaded on demand when played
           });
         } catch (e) {
           console.warn(`Failed to load ${artistGroup.artist} - ${title}:`, e);
@@ -190,19 +189,18 @@ function App() {
       console.error("Failed to start stream:", e);
     }
 
-    // Play audio
+    // Play audio — read file as base64 data URL via Rust backend
     if (audioRef.current) {
-      console.log("Playing audio from:", track.audioSrc);
-      audioRef.current.src = track.audioSrc;
-      audioRef.current.play().catch((e) => {
+      try {
+        const dataUrl = await invoke<string>("playback_read_audio", {
+          filePath: track.cachePath,
+        });
+        audioRef.current.src = dataUrl;
+        audioRef.current.play();
+        setIsPlaying(true);
+      } catch (e) {
         console.error("Audio play failed:", e);
-        // Fallback: try direct file path with asset protocol
-        const assetUrl = `asset://localhost/${encodeURIComponent(track.cachePath)}`;
-        console.log("Trying asset URL:", assetUrl);
-        audioRef.current!.src = assetUrl;
-        audioRef.current!.play().catch((e2) => console.error("Asset fallback also failed:", e2));
-      });
-      setIsPlaying(true);
+      }
     }
   }
 

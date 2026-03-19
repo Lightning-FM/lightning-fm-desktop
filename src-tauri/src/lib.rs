@@ -25,7 +25,7 @@ use commands::{
     // Upload & publish
     upload_track,
     // Playback
-    playback_fetch, playback_load_local, playback_cache_stats, playback_start,
+    playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
     // Credits
     credits_info, credits_deduct,
     // Streaming payments
@@ -51,7 +51,7 @@ pub fn run() {
             // Upload & publish
             upload_track,
             // Playback
-            playback_fetch, playback_load_local, playback_cache_stats, playback_start,
+            playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
             // Credits
             credits_info, credits_deduct,
             // Streaming payments

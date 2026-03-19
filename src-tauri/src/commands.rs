@@ -283,6 +283,12 @@ pub struct CacheStats {
     pub total_bytes: u64,
 }
 
+/// Read audio file as base64 data URL for browser playback
+#[tauri::command]
+pub fn playback_read_audio(file_path: String) -> Result<String, String> {
+    crate::playback::read_audio_base64(&file_path)
+}
+
 #[tauri::command]
 pub fn playback_cache_stats() -> CacheStats {
     let (count, total_bytes) = crate::playback::cache_stats();

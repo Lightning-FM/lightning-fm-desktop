@@ -2,6 +2,7 @@
 // Handles the three-tier fetch chain: local cache → artist P2P → Blossom mirror.
 // Returns a local file path that the React frontend plays via <audio>.
 
+use base64::Engine;
 use sha2::{Sha256, Digest};
 use std::path::PathBuf;
 
@@ -126,6 +127,29 @@ pub fn load_local_file(file_path: &str) -> Result<(String, String), String> {
     }
 
     Ok((hash, cache_path.to_string_lossy().to_string()))
+}
+
+/// Read audio file as base64 data URL for browser playback.
+/// Bypasses asset protocol scope issues entirely.
+pub fn read_audio_base64(file_path: &str) -> Result<String, String> {
+    let path = std::path::Path::new(file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let mime = match path.extension().and_then(|e| e.to_str()) {
+        Some("mp3") => "audio/mpeg",
+        Some("flac") => "audio/flac",
+        Some("ogg") => "audio/ogg",
+        Some("wav") => "audio/wav",
+        _ => "audio/mpeg",
+    };
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
 }
 
 /// Get cache stats
