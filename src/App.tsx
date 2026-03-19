@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./globals.css";
 
-// Identity info returned from Rust backend
 interface IdentityInfo {
   npub: string;
   pubkey_hex: string;
@@ -10,7 +9,6 @@ interface IdentityInfo {
   display_name: string | null;
 }
 
-// Node info returned from Rust backend
 interface NodeInfo {
   node_id: string;
   network: string;
@@ -20,7 +18,6 @@ interface NodeInfo {
   is_running: boolean;
 }
 
-// App states: loading → onboarding (no identity) or home (identity found)
 type AppScreen = "loading" | "onboarding" | "home";
 
 function App() {
@@ -29,7 +26,6 @@ function App() {
   const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // First-launch detection: check keychain for existing identity
   useEffect(() => {
     async function checkIdentity() {
       try {
@@ -79,11 +75,13 @@ function App() {
 
 function LoadingScreen() {
   return (
-    <main className="screen screen-loading">
-      <div className="loading-content">
-        <h1>Lightning FM</h1>
-        <p className="loading-sub">the music channel nobody can shut down</p>
-        <div className="spinner" />
+    <main className="min-h-screen flex flex-col items-center justify-center bg-background">
+      <div className="text-center">
+        <h1 className="font-display text-amber">⚡ Lightning FM</h1>
+        <p className="font-body-mono text-muted-foreground mt-2 italic">
+          the music channel nobody can shut down
+        </p>
+        <div className="mt-6 mx-auto w-5 h-5 border-2 border-border border-t-amber rounded-full animate-spin" />
       </div>
     </main>
   );
@@ -133,26 +131,30 @@ function OnboardingScreen({
   }
 
   return (
-    <main className="screen screen-onboarding">
-      <div className="onboarding-content">
-        <h1>Lightning FM</h1>
-        <p className="onboarding-sub">the music channel nobody can shut down</p>
+    <main className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
+      <div className="text-center max-w-sm w-full">
+        <h1 className="font-display text-amber">⚡ Lightning FM</h1>
+        <p className="font-body-mono text-muted-foreground mt-2 mb-8 italic">
+          the music channel nobody can shut down
+        </p>
 
         {(error || localError) && (
-          <div className="error-msg">{localError || error}</div>
+          <div className="bg-destructive/10 border border-destructive/30 text-destructive font-body-mono px-3 py-2 mb-4 text-left">
+            {localError || error}
+          </div>
         )}
 
         {mode === "choose" ? (
-          <div className="onboarding-actions">
+          <div className="flex flex-col gap-3">
             <button
-              className="btn btn-primary"
+              className="h-9 px-4 bg-primary text-primary-foreground font-mono text-sm font-medium transition-all hover:opacity-90 active:translate-y-px disabled:opacity-50 disabled:pointer-events-none"
               onClick={createNew}
               disabled={loading}
             >
               {loading ? "Creating..." : "Create New Identity"}
             </button>
             <button
-              className="btn btn-secondary"
+              className="h-9 px-4 border border-border bg-background text-secondary-foreground font-mono text-sm font-medium transition-all hover:bg-muted hover:text-foreground active:translate-y-px disabled:opacity-50 disabled:pointer-events-none"
               onClick={() => setMode("import")}
               disabled={loading}
             >
@@ -160,26 +162,28 @@ function OnboardingScreen({
             </button>
           </div>
         ) : (
-          <div className="onboarding-import">
-            <p className="import-label">Paste your nsec or hex secret key</p>
+          <div className="text-left">
+            <p className="font-label-mono text-secondary-foreground uppercase tracking-wider mb-2">
+              Paste your nsec or hex secret key
+            </p>
             <input
               type="password"
-              className="nsec-input"
+              className="w-full h-9 px-3 bg-card border border-input text-foreground font-mono text-sm focus:border-ring focus:ring-1 focus:ring-ring/50 outline-none mb-3"
               value={nsecInput}
               onChange={(e) => setNsecInput(e.target.value)}
               placeholder="nsec1... or hex"
               autoFocus
             />
-            <div className="import-actions">
+            <div className="flex gap-2">
               <button
-                className="btn btn-primary"
+                className="h-9 px-4 bg-primary text-primary-foreground font-mono text-sm font-medium transition-all hover:opacity-90 active:translate-y-px disabled:opacity-50 disabled:pointer-events-none"
                 onClick={importExisting}
                 disabled={loading || !nsecInput.trim()}
               >
                 {loading ? "Importing..." : "Import"}
               </button>
               <button
-                className="btn btn-secondary"
+                className="h-9 px-4 border border-border bg-background text-secondary-foreground font-mono text-sm font-medium transition-all hover:bg-muted hover:text-foreground active:translate-y-px disabled:opacity-50 disabled:pointer-events-none"
                 onClick={() => {
                   setMode("choose");
                   setNsecInput("");
@@ -228,7 +232,6 @@ function HomeScreen({
 
   async function handleLogout() {
     try {
-      // Stop node if running
       try { await invoke("ldk_stop"); } catch {}
       await invoke("identity_delete");
       onLogout();
@@ -237,59 +240,76 @@ function HomeScreen({
     }
   }
 
-  // Truncate npub for display
   const npubShort = identity.npub.slice(0, 12) + "..." + identity.npub.slice(-6);
 
   return (
-    <main className="screen screen-home">
-      <div className="home-header">
-        <h1>Lightning FM</h1>
-        <div className="identity-badge">
-          <span className="npub">{npubShort}</span>
+    <main className="min-h-screen flex flex-col bg-background pt-12 px-6">
+      {/* Header */}
+      <div className="text-center mb-10">
+        <h1 className="font-heading-1 text-amber">⚡ Lightning FM</h1>
+        <div className="mt-2">
+          <span className="font-label-mono text-muted-foreground bg-card px-2 py-1 border border-border">
+            {npubShort}
+          </span>
         </div>
       </div>
 
-      {error && <div className="error-msg">{error}</div>}
+      {error && (
+        <div className="max-w-lg mx-auto w-full bg-destructive/10 border border-destructive/30 text-destructive font-body-mono px-3 py-2 mb-4">
+          {error}
+        </div>
+      )}
 
-      <div className="home-content">
+      {/* Main content */}
+      <div className="max-w-lg mx-auto w-full">
         {!nodeInfo ? (
-          <div className="node-start">
-            <p>Your Nostr identity is ready. Start your Lightning node to begin.</p>
+          <div className="text-center">
+            <p className="font-body-mono text-muted-foreground mb-5">
+              Your Nostr identity is ready. Start your Lightning node to begin.
+            </p>
             <button
-              className="btn btn-primary"
+              className="h-9 px-4 bg-primary text-primary-foreground font-mono text-sm font-medium transition-all hover:opacity-90 active:translate-y-px disabled:opacity-50 disabled:pointer-events-none"
               onClick={startNode}
               disabled={loading}
             >
-              {loading ? "Starting Node..." : "Start Lightning Node"}
+              {loading ? "Starting Node..." : "⚡ Start Lightning Node"}
             </button>
           </div>
         ) : (
-          <div className="node-info">
-            <div className="info-row">
-              <span className="info-label">Node ID</span>
-              <span className="info-value mono">
+          <div className="pane-border p-5">
+            <div className="flex justify-between py-2 border-b border-border">
+              <span className="font-label-mono text-muted-foreground uppercase tracking-wider">Node ID</span>
+              <span className="font-label-mono text-foreground">
                 {nodeInfo.node_id.slice(0, 16)}...{nodeInfo.node_id.slice(-8)}
               </span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Network</span>
-              <span className="info-value">{nodeInfo.network}</span>
+            <div className="flex justify-between py-2 border-b border-border">
+              <span className="font-label-mono text-muted-foreground uppercase tracking-wider">Network</span>
+              <span className="font-body-mono text-foreground">{nodeInfo.network}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Channels</span>
-              <span className="info-value">{nodeInfo.num_channels}</span>
+            <div className="flex justify-between py-2 border-b border-border">
+              <span className="font-label-mono text-muted-foreground uppercase tracking-wider">Channels</span>
+              <span className="font-body-mono text-foreground">{nodeInfo.num_channels}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Peers</span>
-              <span className="info-value">{nodeInfo.num_peers}</span>
+            <div className="flex justify-between py-2">
+              <span className="font-label-mono text-muted-foreground uppercase tracking-wider">Peers</span>
+              <span className="font-body-mono text-foreground">{nodeInfo.num_peers}</span>
             </div>
-            <div className="status-badge running">Node Running</div>
+            <div className="mt-4 text-center">
+              <span className="font-label-mono uppercase tracking-wider text-success bg-success/10 border border-success/30 px-3 py-1 inline-block">
+                Node Running
+              </span>
+            </div>
           </div>
         )}
       </div>
 
-      <div className="home-footer">
-        <button className="btn btn-danger" onClick={handleLogout}>
+      {/* Footer */}
+      <div className="fixed bottom-6 left-0 right-0 text-center">
+        <button
+          className="font-small text-muted-foreground border border-border px-3 py-1 transition-all hover:border-destructive hover:text-destructive"
+          onClick={handleLogout}
+        >
           Delete Identity & Logout
         </button>
       </div>
