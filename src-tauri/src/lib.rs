@@ -1,17 +1,19 @@
 // Lightning FM — Tauri backend entry point
-// Manages LDK node, Nostr identity, relay connections, audio uploads, and playback.
+// Manages LDK node, Nostr identity, relay connections, audio playback, and credits.
 
 mod node;
 mod identity;
 mod relay;
 mod upload;
 mod playback;
+mod credits;
 mod commands;
 
 use tauri::Manager;
 use node::LdkState;
 use identity::IdentityState;
 use relay::RelayState;
+use credits::CreditsState;
 use commands::{
     // LDK node
     ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address,
@@ -22,7 +24,9 @@ use commands::{
     // Upload & publish
     upload_track,
     // Playback
-    playback_fetch, playback_load_local, playback_cache_stats,
+    playback_fetch, playback_load_local, playback_cache_stats, playback_start,
+    // Credits
+    credits_info, credits_deduct,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -32,6 +36,7 @@ pub fn run() {
         .manage(LdkState::new())
         .manage(IdentityState::new())
         .manage(RelayState::new())
+        .manage(CreditsState::new())
         .invoke_handler(tauri::generate_handler![
             // LDK node
             ldk_start,
@@ -55,11 +60,14 @@ pub fn run() {
             playback_fetch,
             playback_load_local,
             playback_cache_stats,
+            playback_start,
+            // Credits
+            credits_info,
+            credits_deduct,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Lightning FM")
         .run(|app, event| {
-            // Gracefully stop LDK node on app exit
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let state = app.state::<LdkState>();
                 if let Ok(mut lock) = state.inner().node.lock() {

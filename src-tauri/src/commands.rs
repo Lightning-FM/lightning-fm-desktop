@@ -5,6 +5,7 @@ use tauri::State;
 use crate::node::{LdkState, NodeInfo, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
 use crate::relay::{RelayState, TrackInfo};
+use crate::credits::{CreditsState, CreditsInfo};
 use nostr_sdk::prelude::*;
 use std::path::Path;
 
@@ -285,4 +286,71 @@ pub struct CacheStats {
 pub fn playback_cache_stats() -> CacheStats {
     let (count, total_bytes) = crate::playback::cache_stats();
     CacheStats { count, total_bytes }
+}
+
+/// Start playback — returns the audio path and playback mode.
+/// If the user has credits/funding, they get full playback.
+/// If unfunded, they get preview-only (frontend enforces the cutoff).
+#[derive(serde::Serialize)]
+pub struct PlaybackStartResult {
+    pub cache_path: String,
+    pub artist_direct: bool,
+    pub mode: String,             // "full" or "preview"
+    pub preview_secs: Option<u64>, // only set if mode == "preview"
+    pub credits_remaining: u64,
+}
+
+#[tauri::command]
+pub async fn playback_start(
+    hash: String,
+    urls: Vec<String>,
+    preview_secs: Option<u64>,
+    credits_state: State<'_, CreditsState>,
+) -> Result<PlaybackStartResult, String> {
+    // Fetch the audio (cache → P2P → mirror)
+    let (path, artist_direct) = crate::playback::fetch_and_cache(&hash, urls).await?;
+
+    // Determine playback mode based on funding
+    let can_stream = crate::credits::can_stream(&credits_state);
+
+    if can_stream {
+        // Activate credits on first play
+        crate::credits::activate_credits(&credits_state);
+
+        let remaining = *credits_state.credits_remaining.lock().unwrap();
+
+        Ok(PlaybackStartResult {
+            cache_path: path,
+            artist_direct,
+            mode: "full".to_string(),
+            preview_secs: None,
+            credits_remaining: remaining,
+        })
+    } else {
+        Ok(PlaybackStartResult {
+            cache_path: path,
+            artist_direct,
+            mode: "preview".to_string(),
+            preview_secs: Some(preview_secs.unwrap_or(10)),
+            credits_remaining: 0,
+        })
+    }
+}
+
+// ─── Credits Commands ───────────────────────────────────────
+
+/// Get current credits info
+#[tauri::command]
+pub fn credits_info(state: State<CreditsState>) -> CreditsInfo {
+    crate::credits::get_credits_info(&state)
+}
+
+/// Deduct credits (called by the streaming payment loop each interval)
+#[tauri::command]
+pub fn credits_deduct(amount: u64, state: State<CreditsState>) -> Result<CreditsInfo, String> {
+    let success = crate::credits::deduct_credits(&state, amount);
+    if !success {
+        return Err("Insufficient credits".to_string());
+    }
+    Ok(crate::credits::get_credits_info(&state))
 }
