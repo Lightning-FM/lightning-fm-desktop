@@ -6,16 +6,20 @@ use ldk_node::bitcoin::Network;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use serde::Serialize;
+use tokio::sync::watch;
 
-/// Shared state holding the LDK node instance
+/// Shared state holding the LDK node instance and event loop handle
 pub struct LdkState {
     pub node: Mutex<Option<Arc<Node>>>,
+    /// Send `true` to shut down the event loop
+    pub event_shutdown: Mutex<Option<watch::Sender<bool>>>,
 }
 
 impl LdkState {
     pub fn new() -> Self {
         Self {
             node: Mutex::new(None),
+            event_shutdown: Mutex::new(None),
         }
     }
 }

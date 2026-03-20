@@ -13,7 +13,7 @@ use std::path::Path;
 // ─── LDK Node Commands ──────────────────────────────────────
 
 #[tauri::command]
-pub fn ldk_start(state: State<LdkState>) -> Result<NodeInfo, String> {
+pub fn ldk_start(state: State<LdkState>, app: tauri::AppHandle) -> Result<NodeInfo, String> {
     let mut node_lock = state.node.lock().map_err(|e| e.to_string())?;
 
     if node_lock.is_some() {
@@ -22,12 +22,26 @@ pub fn ldk_start(state: State<LdkState>) -> Result<NodeInfo, String> {
 
     let node = crate::node::start_node()?;
     let info = crate::node::get_node_info(&node);
+
+    // Start the background event loop
+    let shutdown_tx = crate::events::spawn_event_loop(node.clone(), app);
+    if let Ok(mut shutdown_lock) = state.event_shutdown.lock() {
+        *shutdown_lock = Some(shutdown_tx);
+    }
+
     *node_lock = Some(node);
     Ok(info)
 }
 
 #[tauri::command]
 pub fn ldk_stop(state: State<LdkState>) -> Result<String, String> {
+    // Signal event loop to stop before stopping the node
+    if let Ok(mut shutdown_lock) = state.event_shutdown.lock() {
+        if let Some(tx) = shutdown_lock.take() {
+            let _ = tx.send(true);
+        }
+    }
+
     let mut node_lock = state.node.lock().map_err(|e| e.to_string())?;
 
     match node_lock.take() {

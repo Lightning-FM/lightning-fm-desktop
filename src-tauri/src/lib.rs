@@ -7,6 +7,7 @@ mod upload;
 mod playback;
 mod credits;
 mod streaming;
+mod events;
 mod commands;
 
 use tauri::Manager;
@@ -62,6 +63,16 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let state = app.state::<LdkState>();
+
+                // Signal the event loop to stop first
+                if let Ok(mut shutdown_lock) = state.inner().event_shutdown.lock() {
+                    if let Some(tx) = shutdown_lock.take() {
+                        let _ = tx.send(true);
+                        log::info!("LDK event loop shutdown signaled");
+                    }
+                }
+
+                // Then stop the node
                 if let Ok(mut lock) = state.inner().node.lock() {
                     if let Some(node) = lock.take() {
                         let _: Result<(), _> = node.stop();
