@@ -3,9 +3,10 @@
 
 use ldk_node::{Builder, Node};
 use ldk_node::bitcoin::Network;
+use ldk_node::lightning::ln::msgs::SocketAddress;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 /// Shared state holding the LDK node instance and event loop handle
@@ -24,6 +25,120 @@ impl LdkState {
     }
 }
 
+/// LSPS2 LSP configuration
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LspConfig {
+    /// LSP node address (e.g., "44.228.24.253:9735")
+    pub address: String,
+    /// LSP node public key (hex-encoded)
+    pub node_id: String,
+    /// Optional access token for the LSP
+    pub token: Option<String>,
+}
+
+/// Configuration for node startup
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeConfig {
+    /// Enable artist mode — opens a listening port for inbound connections
+    pub artist_mode: bool,
+    /// Port to listen on in artist mode (default: 9735)
+    pub listening_port: Option<u16>,
+    /// LSPS2 LSP configuration (uses Mutinynet default if not provided)
+    pub lsp: Option<LspConfig>,
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        Self {
+            artist_mode: false,
+            listening_port: None,
+            lsp: None,
+        }
+    }
+}
+
+// Mutinynet LSPS2 LSP — LTBL (Let There Be Lightning) signet node
+const DEFAULT_LSP_ADDRESS: &str = "44.228.24.253:9735";
+const DEFAULT_LSP_NODE_ID: &str = "0371d6fd7d75de2d0372d03ea00e8bacdacb50c27d0eaea0a76a0622eff1f5ef2b";
+
+/// Default listening port for artist mode
+const DEFAULT_LISTENING_PORT: u16 = 9735;
+
+/// Returns the LDK data directory: ~/.lightning-fm/ldk/
+fn data_dir() -> PathBuf {
+    let home = dirs::home_dir().expect("Could not determine home directory");
+    home.join(".lightning-fm").join("ldk")
+}
+
+/// Parse an LSP config into the types ldk-node expects.
+/// Separated from Builder calls so it's testable.
+pub fn parse_lsp_config(lsp: &LspConfig) -> Result<(SocketAddress, ldk_node::bitcoin::secp256k1::PublicKey, Option<String>), String> {
+    let address: SocketAddress = lsp.address.parse()
+        .map_err(|_| format!("Invalid LSP address: {}", lsp.address))?;
+
+    let node_id: ldk_node::bitcoin::secp256k1::PublicKey = lsp.node_id.parse()
+        .map_err(|_| format!("Invalid LSP node ID: {}", lsp.node_id))?;
+
+    Ok((address, node_id, lsp.token.clone()))
+}
+
+/// Parse a listening address for artist mode.
+pub fn parse_listening_address(port: u16) -> Result<SocketAddress, String> {
+    let addr_str = format!("0.0.0.0:{}", port);
+    addr_str.parse()
+        .map_err(|_| format!("Invalid listening address: {}", addr_str))
+}
+
+/// Resolve the LSP config: use provided config or fall back to Mutinynet default.
+pub fn resolve_lsp_config(config: &NodeConfig) -> LspConfig {
+    config.lsp.clone().unwrap_or(LspConfig {
+        address: DEFAULT_LSP_ADDRESS.to_string(),
+        node_id: DEFAULT_LSP_NODE_ID.to_string(),
+        token: None,
+    })
+}
+
+/// Build and start the LDK node.
+/// Uses Signet + Esplora for chain data, RapidGossipSync for routing.
+/// Configures LSPS2 for inbound liquidity and optional listening for artist mode.
+pub fn start_node(config: &NodeConfig) -> Result<Arc<Node>, String> {
+    let storage_dir = data_dir();
+    std::fs::create_dir_all(&storage_dir)
+        .map_err(|e| format!("Failed to create data dir: {}", e))?;
+
+    let mut builder = Builder::new();
+    builder.set_network(Network::Signet);
+    builder.set_storage_dir_path(storage_dir.to_string_lossy().to_string());
+    builder.set_chain_source_esplora(
+        "https://mutinynet.ltbl.io/api".to_string(),
+        None,
+    );
+    builder.set_gossip_source_rgs(
+        "https://mutinynet.ltbl.io/snapshot".to_string(),
+    );
+
+    // LSPS2 — JIT inbound liquidity from LSP
+    let lsp = resolve_lsp_config(config);
+    let (lsp_addr, lsp_pubkey, lsp_token) = parse_lsp_config(&lsp)?;
+    builder.set_liquidity_source_lsps2(lsp_addr, lsp_pubkey, lsp_token);
+    log::info!("LSPS2 configured: {} @ {}", lsp.node_id, lsp.address);
+
+    // Artist mode — listen for inbound peer connections (needed for keysend receiving)
+    if config.artist_mode {
+        let port = config.listening_port.unwrap_or(DEFAULT_LISTENING_PORT);
+        let listen_addr = parse_listening_address(port)?;
+        builder.set_listening_addresses(vec![listen_addr.clone()])
+            .map_err(|e| format!("Failed to set listening address: {:?}", e))?;
+        log::info!("Artist mode: listening on {}", listen_addr);
+    }
+
+    let node = builder.build().map_err(|e| format!("Failed to build node: {:?}", e))?;
+    node.start().map_err(|e| format!("Failed to start node: {:?}", e))?;
+
+    log::info!("LDK node started: {}", node.node_id());
+    Ok(Arc::new(node))
+}
+
 /// Info returned by ldk_get_info
 #[derive(Serialize)]
 pub struct NodeInfo {
@@ -33,6 +148,7 @@ pub struct NodeInfo {
     pub num_channels: usize,
     pub num_peers: usize,
     pub is_running: bool,
+    pub artist_mode: bool,
 }
 
 /// Balance info returned by ldk_get_balance
@@ -57,39 +173,8 @@ pub struct ChannelInfo {
     pub is_channel_ready: bool,
 }
 
-/// Returns the LDK data directory: ~/.lightning-fm/ldk/
-fn data_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not determine home directory");
-    home.join(".lightning-fm").join("ldk")
-}
-
-/// Build and start the LDK node.
-/// Uses testnet4 + Esplora for chain data, RapidGossipSync for routing.
-pub fn start_node() -> Result<Arc<Node>, String> {
-    let storage_dir = data_dir();
-    std::fs::create_dir_all(&storage_dir)
-        .map_err(|e| format!("Failed to create data dir: {}", e))?;
-
-    let mut builder = Builder::new();
-    builder.set_network(Network::Signet);
-    builder.set_storage_dir_path(storage_dir.to_string_lossy().to_string());
-    builder.set_chain_source_esplora(
-        "https://mutinynet.ltbl.io/api".to_string(),
-        None,
-    );
-    builder.set_gossip_source_rgs(
-        "https://mutinynet.ltbl.io/snapshot".to_string(),
-    );
-
-    let node = builder.build().map_err(|e| format!("Failed to build node: {:?}", e))?;
-    node.start().map_err(|e| format!("Failed to start node: {:?}", e))?;
-
-    log::info!("LDK node started: {}", node.node_id());
-    Ok(Arc::new(node))
-}
-
 /// Extract node info from a running node
-pub fn get_node_info(node: &Node) -> NodeInfo {
+pub fn get_node_info(node: &Node, artist_mode: bool) -> NodeInfo {
     let channels = node.list_channels();
     let peers = node.list_peers();
     let addrs = node.listening_addresses()
@@ -105,6 +190,7 @@ pub fn get_node_info(node: &Node) -> NodeInfo {
         num_channels: channels.len(),
         num_peers: peers.len(),
         is_running: true,
+        artist_mode,
     }
 }
 
@@ -143,4 +229,131 @@ pub fn list_channels(node: &Node) -> Vec<ChannelInfo> {
             is_channel_ready: c.is_channel_ready,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_is_listener_mode() {
+        let config = NodeConfig::default();
+        assert!(!config.artist_mode);
+        assert!(config.listening_port.is_none());
+        assert!(config.lsp.is_none());
+    }
+
+    #[test]
+    fn resolve_lsp_uses_default_when_none() {
+        let config = NodeConfig::default();
+        let lsp = resolve_lsp_config(&config);
+        assert_eq!(lsp.address, DEFAULT_LSP_ADDRESS);
+        assert_eq!(lsp.node_id, DEFAULT_LSP_NODE_ID);
+        assert!(lsp.token.is_none());
+    }
+
+    #[test]
+    fn resolve_lsp_uses_custom_when_provided() {
+        let config = NodeConfig {
+            lsp: Some(LspConfig {
+                address: "10.0.0.1:9736".to_string(),
+                node_id: "02".to_string() + &"ab".repeat(32),
+                token: Some("my-token".to_string()),
+            }),
+            ..Default::default()
+        };
+        let lsp = resolve_lsp_config(&config);
+        assert_eq!(lsp.address, "10.0.0.1:9736");
+        assert_eq!(lsp.token, Some("my-token".to_string()));
+    }
+
+    #[test]
+    fn parse_lsp_config_valid() {
+        let lsp = LspConfig {
+            address: DEFAULT_LSP_ADDRESS.to_string(),
+            node_id: DEFAULT_LSP_NODE_ID.to_string(),
+            token: None,
+        };
+        let result = parse_lsp_config(&lsp);
+        assert!(result.is_ok(), "Failed to parse default LSP config: {:?}", result.err());
+
+        let (addr, pubkey, token) = result.unwrap();
+        assert!(addr.to_string().contains("44.228.24.253"));
+        assert_eq!(pubkey.to_string(), DEFAULT_LSP_NODE_ID);
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn parse_lsp_config_invalid_address() {
+        let lsp = LspConfig {
+            address: "not-an-address".to_string(),
+            node_id: DEFAULT_LSP_NODE_ID.to_string(),
+            token: None,
+        };
+        let result = parse_lsp_config(&lsp);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid LSP address"));
+    }
+
+    #[test]
+    fn parse_lsp_config_invalid_node_id() {
+        let lsp = LspConfig {
+            address: DEFAULT_LSP_ADDRESS.to_string(),
+            node_id: "not-a-pubkey".to_string(),
+            token: None,
+        };
+        let result = parse_lsp_config(&lsp);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid LSP node ID"));
+    }
+
+    #[test]
+    fn parse_lsp_config_with_token() {
+        let lsp = LspConfig {
+            address: DEFAULT_LSP_ADDRESS.to_string(),
+            node_id: DEFAULT_LSP_NODE_ID.to_string(),
+            token: Some("test-token-123".to_string()),
+        };
+        let (_, _, token) = parse_lsp_config(&lsp).unwrap();
+        assert_eq!(token, Some("test-token-123".to_string()));
+    }
+
+    #[test]
+    fn parse_listening_address_valid() {
+        let result = parse_listening_address(9735);
+        assert!(result.is_ok());
+        assert!(result.unwrap().to_string().contains("9735"));
+    }
+
+    #[test]
+    fn parse_listening_address_custom_port() {
+        let result = parse_listening_address(19735);
+        assert!(result.is_ok());
+        assert!(result.unwrap().to_string().contains("19735"));
+    }
+
+    #[test]
+    fn node_config_serializes() {
+        let config = NodeConfig {
+            artist_mode: true,
+            listening_port: Some(9736),
+            lsp: Some(LspConfig {
+                address: "1.2.3.4:9735".to_string(),
+                node_id: "02abcd".to_string(),
+                token: None,
+            }),
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("artist_mode"));
+        assert!(json.contains("9736"));
+    }
+
+    #[test]
+    fn node_config_deserializes_from_frontend() {
+        let json = r#"{"artist_mode": true}"#;
+        let config: NodeConfig = serde_json::from_str(json).unwrap();
+        assert!(config.artist_mode);
+        assert!(config.listening_port.is_none());
+        assert!(config.lsp.is_none());
+    }
 }

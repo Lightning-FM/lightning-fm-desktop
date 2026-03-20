@@ -2,7 +2,7 @@
 // Callable from the React frontend via invoke().
 
 use tauri::State;
-use crate::node::{LdkState, NodeInfo, BalanceInfo, ChannelInfo};
+use crate::node::{LdkState, NodeInfo, NodeConfig, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
 use crate::relay::{RelayState, TrackInfo};
 use crate::credits::{CreditsState, CreditsInfo};
@@ -13,15 +13,26 @@ use std::path::Path;
 // ─── LDK Node Commands ──────────────────────────────────────
 
 #[tauri::command]
-pub fn ldk_start(state: State<LdkState>, app: tauri::AppHandle) -> Result<NodeInfo, String> {
+pub fn ldk_start(
+    artist_mode: Option<bool>,
+    listening_port: Option<u16>,
+    state: State<LdkState>,
+    app: tauri::AppHandle,
+) -> Result<NodeInfo, String> {
     let mut node_lock = state.node.lock().map_err(|e| e.to_string())?;
 
     if node_lock.is_some() {
         return Err("Node is already running".to_string());
     }
 
-    let node = crate::node::start_node()?;
-    let info = crate::node::get_node_info(&node);
+    let config = NodeConfig {
+        artist_mode: artist_mode.unwrap_or(false),
+        listening_port,
+        ..Default::default()
+    };
+
+    let node = crate::node::start_node(&config)?;
+    let info = crate::node::get_node_info(&node, config.artist_mode);
 
     // Start the background event loop
     let shutdown_tx = crate::events::spawn_event_loop(node.clone(), app);
@@ -58,7 +69,13 @@ pub fn ldk_get_info(state: State<LdkState>) -> Result<NodeInfo, String> {
     let node_lock = state.node.lock().map_err(|e| e.to_string())?;
 
     match node_lock.as_ref() {
-        Some(node) => Ok(crate::node::get_node_info(node)),
+        Some(node) => {
+            // Derive artist_mode from whether the node has listening addresses
+            let has_listeners = node.listening_addresses()
+                .map(|a| !a.is_empty())
+                .unwrap_or(false);
+            Ok(crate::node::get_node_info(node, has_listeners))
+        }
         None => Err("Node is not running".to_string()),
     }
 }
