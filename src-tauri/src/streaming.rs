@@ -2,6 +2,7 @@
 // Manages the keysend payment loop: 100 sats/min to artists, with rake model.
 // All decision logic is pure and testable. LDK calls are isolated.
 
+use ldk_node::bitcoin::secp256k1::PublicKey;
 use serde::Serialize;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -69,6 +70,16 @@ pub fn build_tlv_records(track_id: &str, listener_pubkey: &str) -> PaymentTlvRec
     }
 }
 
+// ─── Lightning Pubkey Parsing ────────────────────────────────
+
+/// Parse a Lightning node_id from hex string.
+/// Lightning node_ids are 33-byte compressed secp256k1 public keys (66 hex chars).
+/// This is distinct from Nostr pubkeys which are 32-byte x-only keys (64 hex chars).
+pub fn parse_lightning_pubkey(hex: &str) -> Result<PublicKey, String> {
+    hex.parse::<PublicKey>()
+        .map_err(|e| format!("Invalid Lightning node_id '{}': {}", hex, e))
+}
+
 // ─── Stream Session ──────────────────────────────────────────
 
 /// Tracks the state of an active streaming session
@@ -76,6 +87,9 @@ pub fn build_tlv_records(track_id: &str, listener_pubkey: &str) -> PaymentTlvRec
 pub struct StreamSession {
     pub track_id: String,
     pub artist_pubkey: String,
+    /// Lightning node_id for keysend payments (33-byte compressed, hex).
+    /// None if the artist hasn't published their node_id — payments are skipped.
+    pub lightning_node_id: Option<String>,
     pub artist_direct: bool,
     pub is_playing: bool,
     pub intervals_paid: u64,
@@ -86,7 +100,7 @@ pub struct StreamSession {
 }
 
 impl StreamSession {
-    pub fn new(track_id: &str, artist_pubkey: &str, artist_direct: bool) -> Self {
+    pub fn new(track_id: &str, artist_pubkey: &str, lightning_node_id: Option<&str>, artist_direct: bool) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -95,6 +109,7 @@ impl StreamSession {
         Self {
             track_id: track_id.to_string(),
             artist_pubkey: artist_pubkey.to_string(),
+            lightning_node_id: lightning_node_id.map(|s| s.to_string()),
             artist_direct,
             is_playing: true,
             intervals_paid: 0,
@@ -211,7 +226,7 @@ mod tests {
 
     #[test]
     fn new_session_starts_playing() {
-        let session = StreamSession::new("track-1", "artist-pub", true);
+        let session = StreamSession::new("track-1", "artist-pub", None, true);
         assert!(session.is_playing);
         assert_eq!(session.intervals_paid, 0);
         assert_eq!(session.total_listener_sats, 0);
@@ -219,7 +234,7 @@ mod tests {
 
     #[test]
     fn record_payment_direct_accumulates_correctly() {
-        let mut session = StreamSession::new("track-1", "artist-pub", true);
+        let mut session = StreamSession::new("track-1", "artist-pub", None, true);
         session.record_payment();
         session.record_payment();
         session.record_payment();
@@ -232,7 +247,7 @@ mod tests {
 
     #[test]
     fn record_payment_mirror_accumulates_with_rake() {
-        let mut session = StreamSession::new("track-1", "artist-pub", false);
+        let mut session = StreamSession::new("track-1", "artist-pub", None, false);
         session.record_payment();
         session.record_payment();
 
@@ -244,7 +259,7 @@ mod tests {
 
     #[test]
     fn pause_stops_payment_due() {
-        let mut session = StreamSession::new("track-1", "artist-pub", true);
+        let mut session = StreamSession::new("track-1", "artist-pub", None, true);
 
         assert!(session.is_payment_due(61), "Should be due after 61 seconds");
 
@@ -257,7 +272,7 @@ mod tests {
 
     #[test]
     fn payment_due_respects_intervals_paid() {
-        let mut session = StreamSession::new("track-1", "artist-pub", true);
+        let mut session = StreamSession::new("track-1", "artist-pub", None, true);
 
         // At 0 intervals paid, payment is due at 60s
         assert!(!session.is_payment_due(59), "Not due at 59s");
@@ -272,7 +287,7 @@ mod tests {
 
     #[test]
     fn minutes_streamed_tracks_intervals() {
-        let mut session = StreamSession::new("track-1", "artist-pub", true);
+        let mut session = StreamSession::new("track-1", "artist-pub", None, true);
         assert_eq!(session.minutes_streamed(), 0.0);
 
         session.record_payment();
@@ -286,7 +301,7 @@ mod tests {
     #[test]
     fn mixed_session_scenario() {
         // Simulate: artist-direct track, 5 minutes played with a pause in the middle
-        let mut session = StreamSession::new("midnight-train", "npub1artist", true);
+        let mut session = StreamSession::new("midnight-train", "npub1artist", None, true);
 
         // Play for 2 minutes
         session.record_payment(); // minute 1
@@ -309,5 +324,63 @@ mod tests {
         assert_eq!(session.total_platform_sats, 0);
         assert_eq!(session.total_listener_sats, 500);
         assert_eq!(session.minutes_streamed(), 5.0);
+    }
+
+    // ─── Lightning pubkey parsing tests ──────────────────────
+
+    #[test]
+    fn parse_valid_lightning_pubkey() {
+        // Valid 33-byte compressed pubkey (02 prefix + 32 bytes)
+        let valid = "0371d6fd7d75de2d0372d03ea00e8bacdacb50c27d0eaea0a76a0622eff1f5ef2b";
+        let result = parse_lightning_pubkey(valid);
+        assert!(result.is_ok(), "Should parse valid compressed pubkey");
+        assert_eq!(result.unwrap().to_string(), valid);
+    }
+
+    #[test]
+    fn parse_invalid_lightning_pubkey() {
+        assert!(parse_lightning_pubkey("not-a-key").is_err());
+        assert!(parse_lightning_pubkey("").is_err());
+        assert!(parse_lightning_pubkey("02abcd").is_err()); // too short
+    }
+
+    #[test]
+    fn parse_nostr_xonly_pubkey_fails() {
+        // 32-byte x-only key (64 hex chars) — this is a Nostr pubkey, not a Lightning node_id
+        let nostr_key = "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e";
+        let result = parse_lightning_pubkey(nostr_key);
+        assert!(result.is_err(), "Nostr x-only pubkey should not parse as Lightning node_id");
+    }
+
+    #[test]
+    fn session_with_lightning_node_id() {
+        let session = StreamSession::new(
+            "track-1",
+            "nostr-pubkey-hex",
+            Some("0371d6fd7d75de2d0372d03ea00e8bacdacb50c27d0eaea0a76a0622eff1f5ef2b"),
+            true,
+        );
+        assert_eq!(
+            session.lightning_node_id,
+            Some("0371d6fd7d75de2d0372d03ea00e8bacdacb50c27d0eaea0a76a0622eff1f5ef2b".to_string())
+        );
+    }
+
+    #[test]
+    fn session_without_lightning_node_id() {
+        let session = StreamSession::new("track-1", "nostr-pubkey-hex", None, true);
+        assert!(session.lightning_node_id.is_none());
+    }
+
+    #[test]
+    fn sats_to_msats_conversion() {
+        // Document the contract: keysend uses msats, we track sats
+        let artist_sats: u64 = 100;
+        let amount_msat = artist_sats * 1000;
+        assert_eq!(amount_msat, 100_000);
+
+        let artist_sats_mirror: u64 = 90;
+        let amount_msat_mirror = artist_sats_mirror * 1000;
+        assert_eq!(amount_msat_mirror, 90_000);
     }
 }

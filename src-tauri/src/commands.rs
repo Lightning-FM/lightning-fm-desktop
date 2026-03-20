@@ -4,7 +4,7 @@
 use tauri::State;
 use crate::node::{LdkState, NodeInfo, NodeConfig, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
-use crate::relay::{RelayState, TrackInfo};
+use crate::relay::{RelayState, TrackInfo, ProfileData};
 use crate::credits::{CreditsState, CreditsInfo};
 use crate::streaming::{StreamingState, StreamSession};
 use nostr_sdk::prelude::*;
@@ -212,6 +212,53 @@ pub async fn browse_tracks(
     }
 }
 
+// ─── Profile Commands ───────────────────────────────────────
+
+/// Fetch the user's Nostr profile (kind 0) from relays.
+/// Returns None for new identities that haven't published a profile yet.
+#[tauri::command]
+pub async fn profile_fetch(
+    relay_state: State<'_, RelayState>,
+) -> Result<Option<ProfileData>, String> {
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Not connected to relays. Call relay_connect first.")?;
+
+    crate::relay::fetch_profile(client).await
+}
+
+/// Set the user's Nostr profile (kind 0) and publish relay list (kind 10002).
+/// Fetches existing profile first to preserve fields from other clients.
+/// display_name is required; name defaults to lowercase display_name if not provided.
+#[tauri::command]
+pub async fn profile_set(
+    display_name: String,
+    name: Option<String>,
+    about: Option<String>,
+    picture: Option<String>,
+    lud16: Option<String>,
+    relay_state: State<'_, RelayState>,
+) -> Result<ProfileData, String> {
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Not connected to relays. Call relay_connect first.")?;
+
+    let profile = ProfileData {
+        name: Some(name.unwrap_or_else(|| display_name.to_lowercase())),
+        display_name: Some(display_name),
+        about,
+        picture,
+        lud16,
+        nip05: None, // managed separately
+    };
+
+    // Publish kind 0 (merges with existing) and kind 10002 (relay list)
+    crate::relay::publish_profile(client, &profile).await?;
+    crate::relay::publish_relay_list(client).await?;
+
+    Ok(profile)
+}
+
 // ─── Upload & Publish Commands ──────────────────────────────
 
 /// Upload an audio file to Blossom and publish track metadata to Nostr.
@@ -225,6 +272,7 @@ pub async fn upload_track(
     preview_secs: Option<u64>,
     identity_state: State<'_, IdentityState>,
     relay_state: State<'_, RelayState>,
+    ldk_state: State<'_, LdkState>,
 ) -> Result<TrackInfo, String> {
     let path = Path::new(&file_path);
     if !path.exists() {
@@ -245,6 +293,12 @@ pub async fn upload_track(
     let client = client_lock.as_ref()
         .ok_or("Not connected to relays")?;
 
+    // Get the artist's Lightning node_id if the LDK node is running
+    let lightning_node_id = {
+        let node_lock = ldk_state.node.lock().map_err(|e| e.to_string())?;
+        node_lock.as_ref().map(|node| node.node_id().to_string())
+    };
+
     let event_id = crate::relay::publish_track(
         client,
         &title,
@@ -256,6 +310,7 @@ pub async fn upload_track(
         &upload.mime_type,
         upload.size,
         preview_secs,
+        lightning_node_id.as_deref(),
     ).await?;
 
     Ok(TrackInfo {
@@ -271,6 +326,7 @@ pub async fn upload_track(
         mime_type: Some(upload.mime_type),
         file_size: Some(upload.size),
         preview_secs,
+        lightning_node_id,
         created_at: nostr_sdk::Timestamp::now().as_u64(),
     })
 }
@@ -400,11 +456,22 @@ pub fn credits_deduct(amount: u64, state: State<CreditsState>) -> Result<Credits
 pub fn stream_start(
     track_id: String,
     artist_pubkey: String,
+    lightning_node_id: Option<String>,
     artist_direct: bool,
     state: State<StreamingState>,
 ) -> Result<StreamSession, String> {
+    // Validate lightning_node_id if provided
+    if let Some(ref node_id) = lightning_node_id {
+        crate::streaming::parse_lightning_pubkey(node_id)?;
+    }
+
     let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
-    let session = StreamSession::new(&track_id, &artist_pubkey, artist_direct);
+    let session = StreamSession::new(
+        &track_id,
+        &artist_pubkey,
+        lightning_node_id.as_deref(),
+        artist_direct,
+    );
     *session_lock = Some(session.clone());
     Ok(session)
 }
@@ -426,6 +493,7 @@ pub struct IntervalResult {
 pub fn stream_tick(
     streaming_state: State<StreamingState>,
     credits_state: State<CreditsState>,
+    ldk_state: State<LdkState>,
 ) -> Result<IntervalResult, String> {
     let mut session_lock = streaming_state.session.lock().map_err(|e| e.to_string())?;
     let session = session_lock.as_mut()
@@ -447,11 +515,40 @@ pub fn stream_tick(
         // Record the payment in the session
         session.record_payment();
 
-        // TODO: Send actual keysend via LDK here
-        // For now, we track the payment in session state.
-        // When LDK event loop is wired (review tracker item),
-        // this is where we call:
-        //   node.spontaneous_payment().send(artist_pubkey, amount_msat, tlv_records)
+        // Send keysend if artist has a Lightning node_id
+        if let Some(ref node_id_hex) = session.lightning_node_id {
+            let node_lock = ldk_state.node.lock().map_err(|e| e.to_string())?;
+            if let Some(ref node) = *node_lock {
+                let pubkey = crate::streaming::parse_lightning_pubkey(node_id_hex)?;
+                let amount_msat = artist_sats * 1000;
+
+                match node.spontaneous_payment().send(amount_msat, pubkey, None) {
+                    Ok(payment_id) => {
+                        log::info!(
+                            "Keysend sent: {} sats ({} msat) to {}. Payment: {}. Track: {}",
+                            artist_sats, amount_msat, node_id_hex, payment_id, session.track_id,
+                        );
+                    }
+                    Err(e) => {
+                        // Payment failed but credits already deducted.
+                        // On Signet this is acceptable — log and continue.
+                        // Event loop will emit payment_failed to frontend.
+                        log::error!(
+                            "Keysend failed: {} sats to {}. Error: {:?}. Track: {}",
+                            artist_sats, node_id_hex, e, session.track_id,
+                        );
+                    }
+                }
+            } else {
+                log::warn!("LDK node not running — skipping keysend for track {}", session.track_id);
+            }
+        } else {
+            log::info!(
+                "No lightning_node_id for artist — recording payment without keysend. Track: {}",
+                session.track_id,
+            );
+        }
+
         log::info!(
             "Stream tick: {} sats to artist ({}), {} sats platform rake. Track: {}",
             artist_sats,
