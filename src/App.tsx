@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { UploadView } from "./components/upload";
+import { LibraryView } from "./components/library";
+import type { LibraryTrack } from "./components/library";
 import "./globals.css";
 
 // ─── Views ──────────────────────────────────────────────────
@@ -12,14 +14,6 @@ type View = "library" | "upload" | "discover" | "dashboard" | "settings";
 interface LocalLoadResult {
   hash: string;
   cache_path: string;
-}
-
-interface Track {
-  title: string;
-  artist: string;
-  hash: string;
-  cachePath: string;
-  audioSrc: string;
 }
 
 interface CreditsInfo {
@@ -47,6 +41,21 @@ interface IntervalResult {
   listener_sats: number;
   credits_remaining: number;
   credits_depleted: boolean;
+}
+
+// Metadata from Rust metadata_read command
+interface AudioMetadata {
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  track_number: number | null;
+  genre: string | null;
+  year: string | null;
+  duration_secs: number;
+  sample_rate: number | null;
+  bit_depth: number | null;
+  format: string;
+  has_artwork: boolean;
 }
 
 // ─── Test catalog (loaded from test-data/) ──────────────────
@@ -78,9 +87,9 @@ const TEST_CATALOG = [
 
 function App() {
   const [view, setView] = useState<View>("library");
-  const [tracks, setTracks] = useState<Track[]>([]);
+  const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTrack, setActiveTrack] = useState<Track | null>(null);
+  const [activeTrack, setActiveTrack] = useState<LibraryTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -103,10 +112,15 @@ function App() {
         e.preventDefault();
         setView((v) => (v === "upload" ? "library" : "upload"));
       }
+      // Spacebar to toggle play/pause (when not in an input)
+      if (e.key === " " && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement)) {
+        e.preventDefault();
+        togglePlayPause();
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [isPlaying, activeTrack]);
 
   // Streaming payment timer — tick every 60 seconds while playing
   useEffect(() => {
@@ -119,14 +133,13 @@ function App() {
           setCredits(prev => prev ? { ...prev, remaining_sats: result.credits_remaining, can_stream: !result.credits_depleted } : null);
 
           if (result.credits_depleted) {
-            // Credits ran out — pause playback
             audioRef.current?.pause();
             setIsPlaying(false);
           }
         } catch (e) {
           console.error("Stream tick failed:", e);
         }
-      }, 60000); // 60 seconds
+      }, 60000);
     }
 
     return () => {
@@ -145,20 +158,39 @@ function App() {
   }
 
   async function loadTestCatalog() {
-    const loaded: Track[] = [];
+    const loaded: LibraryTrack[] = [];
 
     for (const artistGroup of TEST_CATALOG) {
       for (const title of artistGroup.tracks) {
         try {
-          // Resolve the absolute path to the test file
           const filePath = await resolveTestPath(artistGroup.artist, title);
           const result = await invoke<LocalLoadResult>("playback_load_local", { filePath });
+
+          // Read metadata from the file for duration, format, artwork
+          let meta: AudioMetadata | null = null;
+          let artworkDataUrl: string | null = null;
+          try {
+            meta = await invoke<AudioMetadata>("metadata_read", { filePath });
+          } catch {}
+          try {
+            const art = await invoke<{ data_url: string } | null>("artwork_extract", { filePath });
+            if (art) artworkDataUrl = art.data_url;
+          } catch {}
+
           loaded.push({
-            title,
-            artist: artistGroup.artist,
+            title: meta?.title || title,
+            artist: meta?.artist || artistGroup.artist,
+            album: meta?.album || "",
             hash: result.hash,
             cachePath: result.cache_path,
-            audioSrc: "", // loaded on demand when played
+            duration: meta?.duration_secs || 0,
+            format: meta?.format || "MP3",
+            artworkDataUrl,
+            eventId: null,
+            artistPubkey: null,
+            audioUrl: null,
+            lightningNodeId: null,
+            artistDirect: true,
           });
         } catch (e) {
           console.warn(`Failed to load ${artistGroup.artist} - ${title}:`, e);
@@ -171,7 +203,6 @@ function App() {
   }
 
   async function resolveTestPath(artist: string, title: string): Promise<string> {
-    // Map artist name to folder name
     const folderMap: Record<string, string> = {
       "Satoshi Sounds": "satoshi-sounds",
       "Keypair": "keypair",
@@ -179,15 +210,11 @@ function App() {
       "Lightning Louise": "lightning-louise",
     };
     const folder = folderMap[artist] || artist.toLowerCase().replace(/\s+/g, "-");
-
-    // Get the app's resource directory (or use absolute path for dev)
-    // In dev, test-data is relative to the project root
     const base = "/Users/mloseke/Documents/Ephemeral Empire/matt - projects/lightning-fm/app-desktop/test-data";
     return `${base}/${folder}/${title}.mp3`;
   }
 
-  async function playTrack(track: Track) {
-    // Stop current session if any
+  async function playTrack(track: LibraryTrack) {
     if (session) {
       try { await invoke("stream_stop"); } catch {}
     }
@@ -195,19 +222,18 @@ function App() {
     setActiveTrack(track);
     setSatsPaid(0);
 
-    // Start streaming session
     try {
       const newSession = await invoke<StreamSession>("stream_start", {
         trackId: track.hash,
-        artistPubkey: "test-artist-" + track.artist.toLowerCase().replace(/\s+/g, "-"),
-        artistDirect: true,
+        artistPubkey: track.artistPubkey || "test-artist-" + track.artist.toLowerCase().replace(/\s+/g, "-"),
+        lightningNodeId: track.lightningNodeId || undefined,
+        artistDirect: track.artistDirect,
       });
       setSession(newSession);
     } catch (e) {
       console.error("Failed to start stream:", e);
     }
 
-    // Play audio — read file as base64 data URL via Rust backend
     if (audioRef.current) {
       try {
         const dataUrl = await invoke<string>("playback_read_audio", {
@@ -297,61 +323,18 @@ function App() {
           ))}
         </div>
 
-        {/* ── Main View (scrollable center) ── */}
+        {/* ── Main View ── */}
         <div className="flex-1 min-h-0">
           {view === "upload" ? (
             <UploadView />
           ) : view === "library" ? (
-            <div className="h-full overflow-y-auto">
-              {loading ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="w-5 h-5 border-2 border-border border-t-amber rounded-full animate-spin mx-auto mb-3" />
-                    <span className="font-body-mono text-muted-foreground">Loading catalog...</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4">
-                  <div className="font-label-mono text-muted-foreground uppercase tracking-wider mb-3">
-                    Top Tracks
-                  </div>
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">#</th>
-                        <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">Track</th>
-                        <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">Artist</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tracks.map((track, i) => (
-                        <tr
-                          key={track.hash}
-                          className={`border-b border-border cursor-pointer transition-all hover:bg-amber/5 ${
-                            activeTrack?.hash === track.hash ? "bg-amber/10" : ""
-                          }`}
-                          onClick={() => playTrack(track)}
-                        >
-                          <td className="font-label-mono text-muted-foreground py-2 px-2 w-10 tabular-nums">
-                            {activeTrack?.hash === track.hash && isPlaying ? (
-                              <span className="text-amber">▶</span>
-                            ) : (
-                              i + 1
-                            )}
-                          </td>
-                          <td className="font-body-mono text-foreground py-2 px-2">
-                            {track.title}
-                          </td>
-                          <td className="font-body-mono text-secondary-foreground py-2 px-2">
-                            {track.artist}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <LibraryView
+              tracks={tracks}
+              loading={loading}
+              activeTrackHash={activeTrack?.hash || null}
+              isPlaying={isPlaying}
+              onPlay={playTrack}
+            />
           ) : (
             <div className="flex items-center justify-center h-full">
               <span className="font-body-mono text-muted-foreground">
@@ -365,8 +348,19 @@ function App() {
       {/* ── Player Bar (pinned bottom) ── */}
       {activeTrack && (
         <div className="shrink-0 h-16 border-t border-border bg-card flex items-center px-4 gap-4">
+          {/* Artwork thumbnail */}
+          <div className="w-10 h-10 shrink-0 border border-border overflow-hidden bg-[var(--bg-secondary)]">
+            {activeTrack.artworkDataUrl ? (
+              <img src={activeTrack.artworkDataUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="font-small text-muted-foreground">♪</span>
+              </div>
+            )}
+          </div>
+
           {/* Track info */}
-          <div className="w-48 min-w-0">
+          <div className="w-44 min-w-0">
             <div className="font-body-mono text-foreground truncate">{activeTrack.title}</div>
             <div className="font-small text-secondary-foreground truncate">
               {activeTrack.artist}
@@ -381,7 +375,6 @@ function App() {
             <button
               className="font-body-mono text-secondary-foreground hover:text-foreground"
               onClick={() => {
-                // Previous track
                 const idx = tracks.findIndex(t => t.hash === activeTrack.hash);
                 if (idx > 0) playTrack(tracks[idx - 1]);
               }}
@@ -433,7 +426,6 @@ function App() {
         onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
         onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
         onEnded={() => {
-          // Auto-advance to next track
           if (activeTrack) {
             const idx = tracks.findIndex(t => t.hash === activeTrack.hash);
             if (idx < tracks.length - 1) {
