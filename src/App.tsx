@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { UploadView } from "./components/upload";
 import { LibraryView } from "./components/library";
 import { PaymentNotification } from "./components/PaymentNotification";
+import { DashboardView } from "./components/dashboard";
 import type { LibraryTrack } from "./components/library";
 import type { PaymentEvent } from "./components/PaymentNotification";
 import "./globals.css";
@@ -391,6 +392,8 @@ function App() {
               isPlaying={isPlaying}
               onPlay={playTrack}
             />
+          ) : view === "dashboard" ? (
+            <DashboardView />
           ) : (
             <div className="flex items-center justify-center h-full">
               <span className="font-body-mono text-muted-foreground">
