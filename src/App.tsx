@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { UploadView } from "./components/upload";
 import { LibraryView } from "./components/library";
+import { PaymentNotification } from "./components/PaymentNotification";
 import type { LibraryTrack } from "./components/library";
+import type { PaymentEvent } from "./components/PaymentNotification";
 import "./globals.css";
 
 // ─── Views ──────────────────────────────────────────────────
@@ -96,6 +99,7 @@ function App() {
   const [credits, setCredits] = useState<CreditsInfo | null>(null);
   const [session, setSession] = useState<StreamSession | null>(null);
   const [satsPaid, setSatsPaid] = useState(0);
+  const [paymentEvent, setPaymentEvent] = useState<PaymentEvent | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const intervalRef = useRef<number | null>(null);
 
@@ -103,6 +107,55 @@ function App() {
   useEffect(() => {
     loadTestCatalog();
     loadCredits();
+  }, []);
+
+  // Listen for LDK payment events from the Rust backend
+  useEffect(() => {
+    const unlisten = listen<{
+      event_type: string;
+      payment_hash: string | null;
+      amount_msat: number | null;
+      fee_paid_msat: number | null;
+      close_reason: string | null;
+    }>("ldk-event", (event) => {
+      const payload = event.payload;
+      const amountSats = payload.amount_msat ? Math.round(payload.amount_msat / 1000) : 0;
+
+      switch (payload.event_type) {
+        case "payment_successful":
+          setPaymentEvent({
+            type: "sent",
+            amount_sats: amountSats,
+            message: payload.fee_paid_msat
+              ? `Fee: ${payload.fee_paid_msat} msat`
+              : "Keysend confirmed",
+            timestamp: Date.now(),
+          });
+          break;
+
+        case "payment_failed":
+          setPaymentEvent({
+            type: "failed",
+            amount_sats: 0,
+            message: payload.close_reason || "Routing or channel error",
+            timestamp: Date.now(),
+          });
+          break;
+
+        case "payment_received":
+          setPaymentEvent({
+            type: "received",
+            amount_sats: amountSats,
+            message: "Incoming payment",
+            timestamp: Date.now(),
+          });
+          break;
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   // Global keyboard shortcuts
@@ -276,6 +329,9 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* ── Payment Notification (floating) ── */}
+      <PaymentNotification event={paymentEvent} />
+
       {/* ── Status Bar (pinned top) ── */}
       <div className="shrink-0 h-8 flex items-center px-4 gap-4 border-b border-border bg-background">
         <span className="font-label-mono text-amber">⚡ Lightning FM</span>

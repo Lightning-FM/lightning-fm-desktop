@@ -532,7 +532,13 @@ pub fn stream_tick(
                     Err(e) => {
                         // Payment failed but credits already deducted.
                         // On Signet this is acceptable — log and continue.
-                        // Event loop will emit payment_failed to frontend.
+                        // TODO (pre-mainnet): Implement optimistic deduction with rollback:
+                        //   1. Deduct credits into PENDING state (not finalized)
+                        //   2. On PaymentSuccessful event → finalize deduction
+                        //   3. On PaymentFailed event → refund credits
+                        //   4. On timeout (~120s, no event) → refund credits
+                        //   Use payment_id as idempotency key. Event loop in events.rs
+                        //   already emits payment_successful/payment_failed.
                         log::error!(
                             "Keysend failed: {} sats to {}. Error: {:?}. Track: {}",
                             artist_sats, node_id_hex, e, session.track_id,

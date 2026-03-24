@@ -16,14 +16,17 @@ pub const SATS_PER_INTERVAL: u64 = 100;
 /// Rake percentage when Lightning FM serves from mirror (not artist direct)
 pub const MIRROR_RAKE_PERCENT: u64 = 10;
 
-/// TLV type for Lightning FM custom records in keysend
-/// Used when actual LDK keysend is wired up (review tracker item)
+/// TLV type for Lightning FM custom records in keysend.
+/// All types must be ODD per BOLT 1 ("it's OK to be odd" — even types are rejected
+/// by nodes that don't understand them).
+/// TODO: Wire into keysend when upgrading ldk-node to v0.7+ (v0.4 SpontaneousPayment::send
+/// hardcodes RecipientOnionFields::spontaneous_empty() with no custom TLV support).
 #[allow(dead_code)]
 pub const TLV_TRACK_ID: u64 = 696969;
 #[allow(dead_code)]
-pub const TLV_LISTENER_PUBKEY: u64 = 696970;
+pub const TLV_LISTENER_PUBKEY: u64 = 696971;
 #[allow(dead_code)]
-pub const TLV_TIMESTAMP: u64 = 696971;
+pub const TLV_TIMESTAMP: u64 = 696973;
 
 // ─── Rake Calculation ────────────────────────────────────────
 
