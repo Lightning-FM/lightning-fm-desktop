@@ -1,0 +1,33 @@
+## Lightning FM — Local dev services
+## Start: docker compose up
+## Stop:  docker compose down
+## Reset: docker compose down -v (deletes all data)
+
+services:
+  # Nostr relay — ws://localhost:7777
+  relay:
+    image: scsibug/nostr-rs-relay:latest
+    ports:
+      - "7777:8080"
+    volumes:
+      - ./relay-config.toml:/usr/src/app/config.toml:ro
+      - relay-data:/usr/src/app/db
+    restart: unless-stopped
+
+  # Blossom server — http://localhost:3000
+  # Using a simple Node.js static file server as Blossom stand-in for dev.
+  # Accepts PUT uploads to /upload, serves files by SHA-256 hash.
+  blossom:
+    image: node:22-alpine
+    ports:
+      - "3000:3000"
+    volumes:
+      - blossom-data:/data
+      - ./blossom-dev-server.js:/app/server.js:ro
+    working_dir: /app
+    command: node server.js
+    restart: unless-stopped
+
+volumes:
+  relay-data:
+  blossom-data:

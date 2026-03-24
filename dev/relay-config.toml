@@ -1,0 +1,11 @@
+# nostr-rs-relay config for local dev
+# Accepts all events, no auth required
+
+[network]
+address = "0.0.0.0"
+port = 8080
+
+[limits]
+# Generous limits for dev
+max_event_bytes = 5242880
+messages_per_sec = 100
