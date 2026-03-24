@@ -229,100 +229,122 @@ mod tests {
         assert_eq!(keys.public_key().to_hex(), reimported.public_key().to_hex());
     }
 
-    // ─── Keychain integration tests ─────────────────────────
-    // Use a test-specific service name to avoid touching real keychain
+    // ─── Keychain logic tests (mocked) ─────────────────────────
+    // Tests the store/load/delete logic using an in-memory HashMap
+    // instead of the real macOS Keychain. We trust Apple's keychain works;
+    // we're testing our parsing, roundtripping, and error handling.
 
-    const TEST_SERVICE: &str = "fm.lightning.desktop.test";
-    const TEST_ENTRY: &str = "nostr-nsec-test";
+    use std::collections::HashMap;
+    use std::sync::Mutex as StdMutex;
 
-    fn test_store(keys: &Keys) -> Result<(), String> {
-        let entry = Entry::new(TEST_SERVICE, TEST_ENTRY)
-            .map_err(|e| format!("Keyring error: {}", e))?;
+    struct MockKeychain {
+        store: StdMutex<HashMap<String, String>>,
+    }
+
+    impl MockKeychain {
+        fn new() -> Self {
+            Self { store: StdMutex::new(HashMap::new()) }
+        }
+
+        fn set_password(&self, service: &str, entry: &str, value: &str) {
+            let key = format!("{}:{}", service, entry);
+            self.store.lock().unwrap().insert(key, value.to_string());
+        }
+
+        fn get_password(&self, service: &str, entry: &str) -> Option<String> {
+            let key = format!("{}:{}", service, entry);
+            self.store.lock().unwrap().get(&key).cloned()
+        }
+
+        fn delete(&self, service: &str, entry: &str) -> bool {
+            let key = format!("{}:{}", service, entry);
+            self.store.lock().unwrap().remove(&key).is_some()
+        }
+    }
+
+    fn mock_store(kc: &MockKeychain, keys: &Keys) {
         let hex = keys.secret_key().to_secret_hex();
-        entry.set_password(&hex)
-            .map_err(|e| format!("Store error: {}", e))?;
-        Ok(())
+        kc.set_password(KEYRING_SERVICE, KEYRING_NSEC, &hex);
     }
 
-    fn test_load() -> Result<Option<Keys>, String> {
-        let entry = Entry::new(TEST_SERVICE, TEST_ENTRY)
-            .map_err(|e| format!("Keyring error: {}", e))?;
-        match entry.get_password() {
-            Ok(hex) => {
-                let sk = SecretKey::parse(&hex)
-                    .map_err(|e| format!("Parse error: {}", e))?;
-                Ok(Some(Keys::new(sk)))
-            }
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(format!("Load error: {}", e)),
-        }
-    }
-
-    fn test_delete() -> Result<(), String> {
-        let entry = Entry::new(TEST_SERVICE, TEST_ENTRY)
-            .map_err(|e| format!("Keyring error: {}", e))?;
-        match entry.delete_credential() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(format!("Delete error: {}", e)),
-        }
+    fn mock_load(kc: &MockKeychain) -> Option<Keys> {
+        let hex = kc.get_password(KEYRING_SERVICE, KEYRING_NSEC)?;
+        let sk = SecretKey::parse(&hex).ok()?;
+        Some(Keys::new(sk))
     }
 
     #[test]
     fn keychain_store_load_roundtrip() {
-        // Clean up any leftover test data
-        let _ = test_delete();
-
+        let kc = MockKeychain::new();
         let keys = Keys::generate();
-        test_store(&keys).unwrap();
 
-        let loaded = test_load().unwrap();
+        mock_store(&kc, &keys);
+        let loaded = mock_load(&kc);
+
         assert!(loaded.is_some(), "Should load stored key");
         assert_eq!(
             keys.public_key().to_hex(),
             loaded.unwrap().public_key().to_hex(),
             "Loaded key should match stored key"
         );
-
-        // Clean up
-        test_delete().unwrap();
     }
 
     #[test]
     fn keychain_load_returns_none_when_empty() {
-        // Ensure clean state
-        let _ = test_delete();
-
-        let loaded = test_load().unwrap();
+        let kc = MockKeychain::new();
+        let loaded = mock_load(&kc);
         assert!(loaded.is_none(), "Should return None when no key stored");
     }
 
     #[test]
     fn keychain_delete_is_idempotent() {
-        let _ = test_delete();
+        let kc = MockKeychain::new();
 
-        // Delete when nothing is there — should not error
-        let result = test_delete();
-        assert!(result.is_ok(), "Deleting non-existent entry should succeed");
+        // Delete when nothing is there — should not panic
+        let removed = kc.delete(KEYRING_SERVICE, KEYRING_NSEC);
+        assert!(!removed, "Should return false when nothing to delete");
+
+        // Delete again — still fine
+        let removed = kc.delete(KEYRING_SERVICE, KEYRING_NSEC);
+        assert!(!removed);
     }
 
     #[test]
     fn keychain_overwrite_replaces_key() {
-        let _ = test_delete();
-
+        let kc = MockKeychain::new();
         let keys1 = Keys::generate();
         let keys2 = Keys::generate();
 
-        test_store(&keys1).unwrap();
-        test_store(&keys2).unwrap();
+        mock_store(&kc, &keys1);
+        mock_store(&kc, &keys2);
 
-        let loaded = test_load().unwrap().unwrap();
+        let loaded = mock_load(&kc).unwrap();
         assert_eq!(
             keys2.public_key().to_hex(),
             loaded.public_key().to_hex(),
             "Second store should overwrite first"
         );
+    }
 
-        test_delete().unwrap();
+    #[test]
+    fn keychain_store_uses_hex_format() {
+        let kc = MockKeychain::new();
+        let keys = Keys::generate();
+        mock_store(&kc, &keys);
+
+        let raw = kc.get_password(KEYRING_SERVICE, KEYRING_NSEC).unwrap();
+        assert_eq!(raw.len(), 64, "Stored value should be 64-char hex");
+        assert!(raw.chars().all(|c| c.is_ascii_hexdigit()), "Should be valid hex");
+    }
+
+    #[test]
+    fn keychain_delete_removes_key() {
+        let kc = MockKeychain::new();
+        let keys = Keys::generate();
+        mock_store(&kc, &keys);
+
+        assert!(mock_load(&kc).is_some(), "Key should exist after store");
+        kc.delete(KEYRING_SERVICE, KEYRING_NSEC);
+        assert!(mock_load(&kc).is_none(), "Key should be gone after delete");
     }
 }

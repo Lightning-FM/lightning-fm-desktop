@@ -604,3 +604,73 @@ pub fn stream_info(state: State<StreamingState>) -> Result<Option<StreamSession>
     let session_lock = state.session.lock().map_err(|e| e.to_string())?;
     Ok(session_lock.clone())
 }
+
+// ─── Metadata & Waveform Commands ──────────────────────────
+
+/// Read metadata from an audio file's embedded tags (ID3, Vorbis, etc.)
+/// Returns title, artist, album, genre, year, lyrics, audio properties.
+#[tauri::command]
+pub fn metadata_read(file_path: String) -> Result<crate::metadata::AudioMetadata, String> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+    crate::metadata::read_metadata(path)
+}
+
+/// Write metadata back to an audio file's tags.
+/// Called at publish time so the file on disk has correct tags before
+/// hashing and uploading to Blossom. Only writes fields that are provided.
+#[tauri::command]
+pub fn metadata_write(
+    file_path: String,
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    track_number: Option<u32>,
+    genre: Option<String>,
+    year: Option<String>,
+    lyrics: Option<String>,
+) -> Result<(), String> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    let write_data = crate::metadata::MetadataWrite {
+        title,
+        artist,
+        album,
+        track_number,
+        genre,
+        year,
+        lyrics,
+    };
+    crate::metadata::write_metadata(path, &write_data)
+}
+
+/// Extract embedded artwork from an audio file as a base64 data URL.
+/// Returns None if no artwork is embedded.
+#[tauri::command]
+pub fn artwork_extract(file_path: String) -> Result<Option<crate::metadata::ExtractedArtwork>, String> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+    crate::metadata::extract_artwork(path)
+}
+
+/// Generate waveform peaks from an audio file.
+/// Decodes to PCM, computes peaks, caches to ~/.lightning-fm/waveforms/.
+/// Returns 200 normalized floats (0.0-1.0) for rendering.
+#[tauri::command]
+pub fn waveform_generate(
+    file_path: String,
+    peak_count: Option<usize>,
+) -> Result<crate::waveform::WaveformData, String> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+    crate::waveform::generate_peaks(path, peak_count)
+}

@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { UploadView } from "./components/upload";
 import "./globals.css";
+
+// ─── Views ──────────────────────────────────────────────────
+
+type View = "library" | "upload" | "discover" | "dashboard" | "settings";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -72,6 +77,7 @@ const TEST_CATALOG = [
 // ─── App ────────────────────────────────────────────────────
 
 function App() {
+  const [view, setView] = useState<View>("library");
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTrack, setActiveTrack] = useState<Track | null>(null);
@@ -88,6 +94,18 @@ function App() {
   useEffect(() => {
     loadTestCatalog();
     loadCredits();
+  }, []);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.metaKey && e.key === "u") {
+        e.preventDefault();
+        setView((v) => (v === "upload" ? "library" : "upload"));
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   // Streaming payment timer — tick every 60 seconds while playing
@@ -255,60 +273,90 @@ function App() {
         {/* ── Nav (pinned left) ── */}
         <div className="shrink-0 w-48 border-r border-border p-4 flex flex-col gap-1 overflow-y-auto">
           <span className="font-label-mono text-muted-foreground uppercase tracking-wider mb-2">Navigate</span>
-          <span className="font-body-mono text-amber px-2 py-1 bg-amber/10 border border-amber">≡ Library</span>
-          <span className="font-body-mono text-secondary-foreground px-2 py-1 hover:text-foreground cursor-pointer">◎ Discover</span>
-          <span className="font-body-mono text-secondary-foreground px-2 py-1 hover:text-foreground cursor-pointer">◉ Dashboard</span>
-          <span className="font-body-mono text-secondary-foreground px-2 py-1 hover:text-foreground cursor-pointer">⚙ Settings</span>
+          {([
+            { id: "library" as View, icon: "≡", label: "Library" },
+            { id: "upload" as View, icon: "↑", label: "Upload", shortcut: "⌘U" },
+            { id: "discover" as View, icon: "◎", label: "Discover" },
+            { id: "dashboard" as View, icon: "◉", label: "Dashboard" },
+            { id: "settings" as View, icon: "⚙", label: "Settings" },
+          ]).map((item) => (
+            <span
+              key={item.id}
+              className={`font-body-mono px-2 py-1 cursor-pointer transition-all ${
+                view === item.id
+                  ? "text-amber bg-amber/10 border border-amber"
+                  : "text-secondary-foreground hover:text-foreground border border-transparent"
+              }`}
+              onClick={() => setView(item.id)}
+            >
+              {item.icon} {item.label}
+              {item.shortcut && (
+                <span className="font-small text-muted-foreground ml-1">{item.shortcut}</span>
+              )}
+            </span>
+          ))}
         </div>
 
-        {/* ── Track Table (scrollable center) ── */}
-        <div className="flex-1 overflow-y-auto min-h-0">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="w-5 h-5 border-2 border-border border-t-amber rounded-full animate-spin mx-auto mb-3" />
-                <span className="font-body-mono text-muted-foreground">Loading catalog...</span>
-              </div>
+        {/* ── Main View (scrollable center) ── */}
+        <div className="flex-1 min-h-0">
+          {view === "upload" ? (
+            <UploadView />
+          ) : view === "library" ? (
+            <div className="h-full overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="w-5 h-5 border-2 border-border border-t-amber rounded-full animate-spin mx-auto mb-3" />
+                    <span className="font-body-mono text-muted-foreground">Loading catalog...</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4">
+                  <div className="font-label-mono text-muted-foreground uppercase tracking-wider mb-3">
+                    Top Tracks
+                  </div>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">#</th>
+                        <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">Track</th>
+                        <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">Artist</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tracks.map((track, i) => (
+                        <tr
+                          key={track.hash}
+                          className={`border-b border-border cursor-pointer transition-all hover:bg-amber/5 ${
+                            activeTrack?.hash === track.hash ? "bg-amber/10" : ""
+                          }`}
+                          onClick={() => playTrack(track)}
+                        >
+                          <td className="font-label-mono text-muted-foreground py-2 px-2 w-10 tabular-nums">
+                            {activeTrack?.hash === track.hash && isPlaying ? (
+                              <span className="text-amber">▶</span>
+                            ) : (
+                              i + 1
+                            )}
+                          </td>
+                          <td className="font-body-mono text-foreground py-2 px-2">
+                            {track.title}
+                          </td>
+                          <td className="font-body-mono text-secondary-foreground py-2 px-2">
+                            {track.artist}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="p-4">
-              <div className="font-label-mono text-muted-foreground uppercase tracking-wider mb-3">
-                Top Tracks
-              </div>
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">#</th>
-                    <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">Track</th>
-                    <th className="font-label-mono text-muted-foreground uppercase tracking-wider text-left py-2 px-2">Artist</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tracks.map((track, i) => (
-                    <tr
-                      key={track.hash}
-                      className={`border-b border-border cursor-pointer transition-all hover:bg-amber/5 ${
-                        activeTrack?.hash === track.hash ? "bg-amber/10" : ""
-                      }`}
-                      onClick={() => playTrack(track)}
-                    >
-                      <td className="font-label-mono text-muted-foreground py-2 px-2 w-10 tabular-nums">
-                        {activeTrack?.hash === track.hash && isPlaying ? (
-                          <span className="text-amber">▶</span>
-                        ) : (
-                          i + 1
-                        )}
-                      </td>
-                      <td className="font-body-mono text-foreground py-2 px-2">
-                        {track.title}
-                      </td>
-                      <td className="font-body-mono text-secondary-foreground py-2 px-2">
-                        {track.artist}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex items-center justify-center h-full">
+              <span className="font-body-mono text-muted-foreground">
+                {view.charAt(0).toUpperCase() + view.slice(1)} — coming soon
+              </span>
             </div>
           )}
         </div>

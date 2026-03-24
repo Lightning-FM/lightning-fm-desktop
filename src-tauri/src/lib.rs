@@ -8,6 +8,8 @@ mod playback;
 mod credits;
 mod streaming;
 mod events;
+mod metadata;
+mod waveform;
 mod commands;
 
 use tauri::Manager;
@@ -23,8 +25,12 @@ use commands::{
     identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
     // Relay & browse
     relay_connect, browse_tracks,
+    // Profile
+    profile_fetch, profile_set,
     // Upload & publish
     upload_track,
+    // Metadata & waveform
+    metadata_read, metadata_write, artwork_extract, waveform_generate,
     // Playback
     playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
     // Credits
@@ -49,8 +55,12 @@ pub fn run() {
             identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
             // Relay & browse
             relay_connect, browse_tracks,
+            // Profile
+            profile_fetch, profile_set,
             // Upload & publish
             upload_track,
+            // Metadata & waveform
+            metadata_read, metadata_write, artwork_extract, waveform_generate,
             // Playback
             playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
             // Credits

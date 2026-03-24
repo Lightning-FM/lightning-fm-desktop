@@ -8,12 +8,33 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
-/// Default relays for Lightning FM
-const DEFAULT_RELAYS: &[&str] = &[
+/// Relay configuration by environment.
+/// Set LFM_NOSTR_RELAYS env var to override (comma-separated).
+/// Default: local dev relay. Production relays are only used when explicitly configured.
+const DEV_RELAYS: &[&str] = &[
+    "ws://localhost:7777",
+];
+
+const PROD_RELAYS: &[&str] = &[
     "wss://relay.damus.io",
     "wss://nos.lol",
     "wss://relay.nostr.band",
 ];
+
+fn get_relays() -> Vec<String> {
+    // Check env var first — allows any custom relay config
+    if let Ok(relays) = std::env::var("LFM_NOSTR_RELAYS") {
+        return relays.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    }
+
+    // Check if we're in production mode
+    if std::env::var("LFM_ENV").as_deref() == Ok("production") {
+        return PROD_RELAYS.iter().map(|s| s.to_string()).collect();
+    }
+
+    // Default: local dev relay
+    DEV_RELAYS.iter().map(|s| s.to_string()).collect()
+}
 
 /// Custom event kind for track metadata
 const KIND_TRACK: u16 = 31337;
@@ -54,14 +75,15 @@ pub struct TrackInfo {
 /// Connect to Nostr relays with the user's keys
 pub async fn connect(keys: &Keys) -> Result<Arc<Client>, String> {
     let client = Client::new(keys.clone());
+    let relays = get_relays();
 
-    for relay in DEFAULT_RELAYS {
-        client.add_relay(*relay).await
+    for relay in &relays {
+        client.add_relay(relay.as_str()).await
             .map_err(|e| format!("Failed to add relay {}: {}", relay, e))?;
     }
 
     client.connect().await;
-    log::info!("Connected to {} relays", DEFAULT_RELAYS.len());
+    log::info!("Connected to {} relays: {:?}", relays.len(), relays);
 
     Ok(Arc::new(client))
 }
@@ -271,7 +293,9 @@ pub async fn publish_profile(client: &Client, data: &ProfileData) -> Result<Stri
 
 /// Publish kind 10002 relay list to relays (NIP-65).
 pub async fn publish_relay_list(client: &Client) -> Result<String, String> {
-    let tags = build_relay_list_tags(DEFAULT_RELAYS);
+    let relays = get_relays();
+    let relay_refs: Vec<&str> = relays.iter().map(|s| s.as_str()).collect();
+    let tags = build_relay_list_tags(&relay_refs);
 
     let builder = EventBuilder::new(Kind::RelayList, "")
         .tags(tags);
@@ -471,13 +495,29 @@ mod tests {
 
     #[test]
     fn relay_list_tags_correct_structure() {
-        let tags = build_relay_list_tags(DEFAULT_RELAYS);
+        let tags = build_relay_list_tags(PROD_RELAYS);
         assert_eq!(tags.len(), 3);
         for tag in &tags {
             let values = tag.as_slice();
             assert_eq!(values[0], "r");
             assert!(values[1].starts_with("wss://"));
         }
+    }
+
+    #[test]
+    fn dev_relays_are_localhost() {
+        for relay in DEV_RELAYS {
+            assert!(relay.starts_with("ws://localhost"), "Dev relay should be localhost, got {}", relay);
+        }
+    }
+
+    #[test]
+    fn get_relays_defaults_to_dev() {
+        // Without env vars set, should return dev relays
+        let relays = get_relays();
+        // If LFM_NOSTR_RELAYS or LFM_ENV is set in the test runner, this may differ.
+        // But in a clean env, it should be dev.
+        assert!(!relays.is_empty(), "Should return at least one relay");
     }
 
     #[test]

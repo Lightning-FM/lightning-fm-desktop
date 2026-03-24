@@ -7,8 +7,19 @@ use sha2::{Sha256, Digest};
 use serde::Serialize;
 use std::path::Path;
 
-/// Lightning FM's Blossom server
-const BLOSSOM_SERVER: &str = "https://media.lightning.fm";
+/// Blossom server by environment.
+/// Set LFM_blossom_server env var to override.
+/// Default: localhost for dev. Production only when LFM_ENV=production.
+fn get_blossom_server() -> String {
+    if let Ok(server) = std::env::var("LFM_blossom_server") {
+        return server;
+    }
+    if std::env::var("LFM_ENV").as_deref() == Ok("production") {
+        return "https://media.lightning.fm".to_string();
+    }
+    // Local dev — assumes a local Blossom server
+    "http://localhost:3000".to_string()
+}
 
 /// Kind 24242 — Blossom upload authorization
 const KIND_BLOSSOM_AUTH: u16 = 24242;
@@ -84,6 +95,7 @@ pub async fn upload_to_blossom(
     file_path: &Path,
     keys: &Keys,
 ) -> Result<UploadResult, String> {
+    let blossom_server = get_blossom_server();
     let (sha256, size) = hash_file(file_path)?;
     let mime_type = detect_mime(file_path);
 
@@ -97,7 +109,7 @@ pub async fn upload_to_blossom(
     // Upload via HTTP PUT
     let client = reqwest::Client::new();
     let response = client
-        .put(format!("{}/upload", BLOSSOM_SERVER))
+        .put(format!("{}/upload", blossom_server))
         .header("Authorization", format!("Nostr {}", auth_token))
         .header("Content-Type", &mime_type)
         .body(bytes)
@@ -111,7 +123,7 @@ pub async fn upload_to_blossom(
         return Err(format!("Upload failed ({}): {}", status, body));
     }
 
-    let url = format!("{}/{}", BLOSSOM_SERVER, sha256);
+    let url = format!("{}/{}", blossom_server, sha256);
     log::info!("Uploaded {} to {}", file_path.display(), url);
 
     Ok(UploadResult {
