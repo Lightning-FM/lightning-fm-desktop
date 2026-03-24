@@ -680,3 +680,73 @@ pub fn waveform_generate(
     }
     crate::waveform::generate_peaks(path, peak_count)
 }
+
+// ─── Withdrawal Commands ───────────────────────────────────
+
+/// Pay a BOLT 11 Lightning invoice (artist withdrawal via invoice)
+#[derive(serde::Serialize)]
+pub struct PaymentResult {
+    pub payment_id: String,
+    pub amount_msat: Option<u64>,
+}
+
+#[tauri::command]
+pub fn withdraw_lightning(
+    invoice: String,
+    state: State<LdkState>,
+) -> Result<PaymentResult, String> {
+    let node_lock = state.node.lock().map_err(|e| e.to_string())?;
+    let node = node_lock.as_ref().ok_or("Node is not running")?;
+
+    let bolt11 = invoice.parse::<ldk_node::lightning_invoice::Bolt11Invoice>()
+        .map_err(|e| format!("Invalid BOLT 11 invoice: {}", e))?;
+
+    let amount_msat = bolt11.amount_milli_satoshis();
+
+    let payment_id = node.bolt11_payment().send(&bolt11, None)
+        .map_err(|e| format!("Payment failed: {:?}", e))?;
+
+    log::info!("Withdrawal payment sent: {} ({})", payment_id, invoice.get(..20).unwrap_or(&invoice));
+
+    Ok(PaymentResult {
+        payment_id: format!("{}", payment_id),
+        amount_msat,
+    })
+}
+
+/// Send on-chain Bitcoin withdrawal to an address
+#[derive(serde::Serialize)]
+pub struct OnchainResult {
+    pub txid: String,
+}
+
+#[tauri::command]
+pub fn withdraw_onchain(
+    address: String,
+    amount_sats: Option<u64>,
+    state: State<LdkState>,
+) -> Result<OnchainResult, String> {
+    let node_lock = state.node.lock().map_err(|e| e.to_string())?;
+    let node = node_lock.as_ref().ok_or("Node is not running")?;
+
+    let addr: ldk_node::bitcoin::Address<ldk_node::bitcoin::address::NetworkUnchecked> = address.parse()
+        .map_err(|e| format!("Invalid Bitcoin address: {:?}", e))?;
+    let addr = addr.assume_checked();
+
+    let txid = if let Some(sats) = amount_sats {
+        node.onchain_payment().send_to_address(&addr, sats)
+            .map_err(|e| format!("On-chain send failed: {:?}", e))?
+    } else {
+        // Send all funds
+        node.onchain_payment().send_all_to_address(&addr)
+            .map_err(|e| format!("On-chain send-all failed: {:?}", e))?
+    };
+
+    log::info!("On-chain withdrawal: {} sats to {} (txid: {})",
+        amount_sats.map(|s| s.to_string()).unwrap_or_else(|| "all".to_string()),
+        address, txid);
+
+    Ok(OnchainResult {
+        txid: format!("{}", txid),
+    })
+}

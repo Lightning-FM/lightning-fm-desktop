@@ -31,6 +31,8 @@ use commands::{
     upload_track,
     // Metadata & waveform
     metadata_read, metadata_write, artwork_extract, waveform_generate,
+    // Withdrawals
+    withdraw_lightning, withdraw_onchain,
     // Playback
     playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
     // Credits
@@ -61,6 +63,8 @@ pub fn run() {
             upload_track,
             // Metadata & waveform
             metadata_read, metadata_write, artwork_extract, waveform_generate,
+            // Withdrawals
+            withdraw_lightning, withdraw_onchain,
             // Playback
             playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
             // Credits

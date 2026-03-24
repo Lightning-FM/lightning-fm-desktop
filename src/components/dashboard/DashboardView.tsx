@@ -7,6 +7,7 @@ import type { NodeInfo, BalanceInfo, EarningsEntry } from "./types";
 import { StatCard } from "./StatCard";
 import { EarningsFeed } from "./EarningsFeed";
 import { NodeStatus } from "./NodeStatus";
+import { WithdrawPanel } from "./WithdrawPanel";
 
 export function DashboardView() {
   const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
@@ -156,14 +157,15 @@ export function DashboardView() {
             <EarningsFeed entries={earnings} />
           </div>
 
-          {/* Node status (right, narrower) */}
-          <div className="w-64 shrink-0">
+          {/* Right column: node status + withdraw */}
+          <div className="w-64 shrink-0 flex flex-col gap-3">
             <NodeStatus
               nodeInfo={nodeInfo}
               balance={balance}
               onStartNode={handleStartNode}
               onStopNode={handleStopNode}
             />
+            <WithdrawPanel />
           </div>
         </div>
       </div>
