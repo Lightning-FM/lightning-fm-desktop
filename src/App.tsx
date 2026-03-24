@@ -132,13 +132,28 @@ function App() {
     checkIdentity();
   }, []);
 
-  // Load test tracks and credits after identity is confirmed
+  // Load test tracks, credits, and start LDK node after identity is confirmed
   useEffect(() => {
     if (identity) {
       loadTestCatalog();
       loadCredits();
+      startLdkNode();
     }
   }, [identity]);
+
+  // Start the LDK node in the background (non-blocking)
+  async function startLdkNode() {
+    try {
+      await invoke("ldk_start", { artistMode: true });
+      console.log("LDK node started (Signet, artist mode)");
+    } catch (e) {
+      // "Node is already running" is expected on hot reload
+      const msg = String(e);
+      if (!msg.includes("already running")) {
+        console.error("Failed to start LDK node:", e);
+      }
+    }
+  }
 
   // Listen for LDK payment events from the Rust backend
   useEffect(() => {
