@@ -5,6 +5,7 @@ import { UploadView } from "./components/upload";
 import { LibraryView } from "./components/library";
 import { PaymentNotification } from "./components/PaymentNotification";
 import { DashboardView } from "./components/dashboard";
+import { OnboardingView } from "./components/onboarding";
 import type { LibraryTrack } from "./components/library";
 import type { PaymentEvent } from "./components/PaymentNotification";
 import "./globals.css";
@@ -87,9 +88,20 @@ const TEST_CATALOG = [
   ]},
 ];
 
+// ─── Identity ───────────────────────────────────────────────
+
+interface IdentityInfo {
+  npub: string;
+  pubkey_hex: string;
+  has_nsec: boolean;
+  display_name: string | null;
+}
+
 // ─── App ────────────────────────────────────────────────────
 
 function App() {
+  const [identity, setIdentity] = useState<IdentityInfo | null>(null);
+  const [identityChecked, setIdentityChecked] = useState(false);
   const [view, setView] = useState<View>("library");
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,11 +116,29 @@ function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const intervalRef = useRef<number | null>(null);
 
-  // Load test tracks on mount
+  // Check for existing identity on mount
   useEffect(() => {
-    loadTestCatalog();
-    loadCredits();
+    async function checkIdentity() {
+      try {
+        const existing = await invoke<IdentityInfo | null>("identity_check");
+        if (existing) {
+          setIdentity(existing);
+        }
+      } catch (e) {
+        console.warn("Identity check failed:", e);
+      }
+      setIdentityChecked(true);
+    }
+    checkIdentity();
   }, []);
+
+  // Load test tracks and credits after identity is confirmed
+  useEffect(() => {
+    if (identity) {
+      loadTestCatalog();
+      loadCredits();
+    }
+  }, [identity]);
 
   // Listen for LDK payment events from the Rust backend
   useEffect(() => {
@@ -328,6 +358,23 @@ function App() {
     audioRef.current.currentTime = pct * duration;
   }
 
+  // Show loading while checking keychain for existing identity
+  if (!identityChecked) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="w-5 h-5 border-2 border-border border-t-amber rounded-full animate-spin mx-auto mb-3" />
+          <span className="font-body-mono text-muted-foreground">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show onboarding if no identity
+  if (!identity) {
+    return <OnboardingView onComplete={setIdentity} />;
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* ── Payment Notification (floating) ── */}
@@ -339,6 +386,11 @@ function App() {
         <span className="font-small text-muted-foreground">
           {tracks.length} tracks
         </span>
+        {identity && (
+          <span className="font-small text-muted-foreground">
+            · {identity.npub.slice(0, 12)}...
+          </span>
+        )}
         {credits && (
           <span className="font-small text-muted-foreground ml-auto">
             ⚡ {credits.remaining_sats.toLocaleString()} sats
