@@ -13,16 +13,18 @@ use std::path::Path;
 // ─── LDK Node Commands ──────────────────────────────────────
 
 #[tauri::command]
-pub fn ldk_start(
+pub async fn ldk_start(
     artist_mode: Option<bool>,
     listening_port: Option<u16>,
-    state: State<LdkState>,
+    state: State<'_, LdkState>,
     app: tauri::AppHandle,
 ) -> Result<NodeInfo, String> {
-    let mut node_lock = state.node.lock().map_err(|e| e.to_string())?;
-
-    if node_lock.is_some() {
-        return Err("Node is already running".to_string());
+    // Check if already running (before any blocking work)
+    {
+        let node_lock = state.node.lock().map_err(|e| e.to_string())?;
+        if node_lock.is_some() {
+            return Err("Node is already running".to_string());
+        }
     }
 
     let config = NodeConfig {
@@ -31,8 +33,18 @@ pub fn ldk_start(
         ..Default::default()
     };
 
-    let node = crate::node::start_node(&config)?;
-    let info = crate::node::get_node_info(&node, config.artist_mode);
+    // Async health check — find a working Esplora endpoint before touching LDK
+    let (esplora_url, rgs_url) = crate::node::find_healthy_endpoint().await?;
+
+    // Run the blocking LDK build+start on a dedicated thread
+    let node = tokio::task::spawn_blocking(move || {
+        crate::node::start_node(&config, &esplora_url, &rgs_url)
+    })
+    .await
+    .map_err(|e| format!("Node start task panicked: {}", e))??;
+
+    let am = artist_mode.unwrap_or(false);
+    let info = crate::node::get_node_info(&node, am);
 
     // Start the background event loop
     let shutdown_tx = crate::events::spawn_event_loop(node.clone(), app);
@@ -40,6 +52,7 @@ pub fn ldk_start(
         *shutdown_lock = Some(shutdown_tx);
     }
 
+    let mut node_lock = state.node.lock().map_err(|e| e.to_string())?;
     *node_lock = Some(node);
     Ok(info)
 }

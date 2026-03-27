@@ -98,32 +98,71 @@ pub fn resolve_lsp_config(config: &NodeConfig) -> LspConfig {
     })
 }
 
-/// Build and start the LDK node.
-/// Uses Signet + Esplora for chain data, RapidGossipSync for routing.
-/// Configures LSPS2 for inbound liquidity and optional listening for artist mode.
-pub fn start_node(config: &NodeConfig) -> Result<Arc<Node>, String> {
+/// Esplora endpoints to try in order. If the primary is down, we fall back.
+const ESPLORA_ENDPOINTS: &[(&str, &str)] = &[
+    ("https://mutinynet.ltbl.io/api", "https://mutinynet.ltbl.io/snapshot"),
+    ("https://mutinynet.com/api", "https://mutinynet.ltbl.io/snapshot"),
+    ("https://mempool.space/signet/api", "https://mutinynet.ltbl.io/snapshot"),
+];
+
+/// Check if an Esplora endpoint is healthy by hitting its fee-estimates endpoint.
+/// Async — safe to call from Tauri's async command handlers.
+pub async fn check_esplora_health(base_url: &str) -> bool {
+    let url = format!("{}/fee-estimates", base_url);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    match client {
+        Ok(c) => match c.get(&url).send().await {
+            Ok(resp) => {
+                let healthy = resp.status().is_success();
+                if !healthy {
+                    log::warn!("Esplora {} returned HTTP {}", base_url, resp.status());
+                }
+                healthy
+            }
+            Err(e) => {
+                log::warn!("Esplora {} unreachable: {}", base_url, e);
+                false
+            }
+        },
+        Err(_) => false,
+    }
+}
+
+/// Find the first healthy Esplora endpoint. Async — call before start_node.
+pub async fn find_healthy_endpoint() -> Result<(String, String), String> {
+    for (esplora_url, rgs_url) in ESPLORA_ENDPOINTS {
+        log::info!("Checking Esplora health: {}", esplora_url);
+        if check_esplora_health(esplora_url).await {
+            log::info!("Using Esplora endpoint: {}", esplora_url);
+            return Ok((esplora_url.to_string(), rgs_url.to_string()));
+        }
+    }
+    Err("All Esplora endpoints are unreachable".to_string())
+}
+
+/// Build and start the LDK node with a known-good Esplora endpoint.
+/// Call find_healthy_endpoint() first to get the URLs.
+/// This is a blocking function — call from spawn_blocking if in async context.
+pub fn start_node(config: &NodeConfig, esplora_url: &str, rgs_url: &str) -> Result<Arc<Node>, String> {
     let storage_dir = data_dir();
     std::fs::create_dir_all(&storage_dir)
         .map_err(|e| format!("Failed to create data dir: {}", e))?;
 
+    let lsp = resolve_lsp_config(config);
+    let (lsp_addr, lsp_pubkey, lsp_token) = parse_lsp_config(&lsp)?;
+
     let mut builder = Builder::new();
     builder.set_network(Network::Signet);
     builder.set_storage_dir_path(storage_dir.to_string_lossy().to_string());
-    builder.set_chain_source_esplora(
-        "https://mutinynet.ltbl.io/api".to_string(),
-        None,
-    );
-    builder.set_gossip_source_rgs(
-        "https://mutinynet.ltbl.io/snapshot".to_string(),
-    );
+    builder.set_chain_source_esplora(esplora_url.to_string(), None);
+    builder.set_gossip_source_rgs(rgs_url.to_string());
 
-    // LSPS2 — JIT inbound liquidity from LSP
-    let lsp = resolve_lsp_config(config);
-    let (lsp_addr, lsp_pubkey, lsp_token) = parse_lsp_config(&lsp)?;
     builder.set_liquidity_source_lsps2(lsp_addr, lsp_pubkey, lsp_token);
     log::info!("LSPS2 configured: {} @ {}", lsp.node_id, lsp.address);
 
-    // Artist mode — listen for inbound peer connections (needed for keysend receiving)
     if config.artist_mode {
         let port = config.listening_port.unwrap_or(DEFAULT_LISTENING_PORT);
         let listen_addr = parse_listening_address(port)?;
@@ -135,7 +174,7 @@ pub fn start_node(config: &NodeConfig) -> Result<Arc<Node>, String> {
     let node = builder.build().map_err(|e| format!("Failed to build node: {:?}", e))?;
     node.start().map_err(|e| format!("Failed to start node: {:?}", e))?;
 
-    log::info!("LDK node started: {}", node.node_id());
+    log::info!("LDK node started via {}: {}", esplora_url, node.node_id());
     Ok(Arc::new(node))
 }
 
@@ -234,6 +273,19 @@ pub fn list_channels(node: &Node) -> Vec<ChannelInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn esplora_endpoints_has_at_least_two() {
+        assert!(ESPLORA_ENDPOINTS.len() >= 2, "Need at least a primary and fallback endpoint");
+    }
+
+    #[test]
+    fn esplora_endpoints_are_https() {
+        for (esplora, rgs) in ESPLORA_ENDPOINTS {
+            assert!(esplora.starts_with("https://"), "Esplora URL must be HTTPS: {}", esplora);
+            assert!(rgs.starts_with("https://"), "RGS URL must be HTTPS: {}", rgs);
+        }
+    }
 
     #[test]
     fn default_config_is_listener_mode() {
@@ -355,5 +407,64 @@ mod tests {
         assert!(config.artist_mode);
         assert!(config.listening_port.is_none());
         assert!(config.lsp.is_none());
+    }
+
+    // ─── Esplora health check + fallback tests ──────────────
+
+    #[tokio::test]
+    async fn health_check_returns_false_for_unreachable_host() {
+        let result = check_esplora_health("https://this-host-does-not-exist.invalid/api").await;
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn health_check_returns_false_for_non_json_endpoint() {
+        // Valid host, but not an Esplora API — fee-estimates path won't exist
+        let result = check_esplora_health("https://example.com").await;
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn health_check_returns_true_for_known_good_endpoint() {
+        // mempool.space signet is a stable public endpoint
+        let result = check_esplora_health("https://mempool.space/signet/api").await;
+        assert!(result, "mempool.space signet should be healthy");
+    }
+
+    #[tokio::test]
+    async fn find_healthy_endpoint_returns_a_result() {
+        // At least one of the configured endpoints should be up
+        let result = find_healthy_endpoint().await;
+        assert!(result.is_ok(), "Should find at least one healthy endpoint: {:?}", result.err());
+
+        let (esplora, rgs) = result.unwrap();
+        assert!(esplora.starts_with("https://"));
+        assert!(rgs.starts_with("https://"));
+    }
+
+    #[tokio::test]
+    async fn find_healthy_endpoint_returns_first_healthy() {
+        // If the first endpoint is healthy, it should be returned
+        // (we can't control which is up, but we verify the contract)
+        let result = find_healthy_endpoint().await.unwrap();
+        // Result should be one of our configured endpoints
+        let valid_urls: Vec<&str> = ESPLORA_ENDPOINTS.iter().map(|(url, _)| *url).collect();
+        assert!(valid_urls.contains(&result.0.as_str()),
+            "Returned URL {} should be from configured endpoints", result.0);
+    }
+
+    #[test]
+    fn esplora_endpoints_have_unique_base_urls() {
+        let urls: Vec<&str> = ESPLORA_ENDPOINTS.iter().map(|(url, _)| *url).collect();
+        let unique: std::collections::HashSet<&&str> = urls.iter().collect();
+        assert_eq!(urls.len(), unique.len(), "Esplora endpoints should be unique");
+    }
+
+    #[test]
+    fn start_node_rejects_invalid_esplora_url() {
+        // start_node should fail gracefully with a bad URL, not panic
+        let config = NodeConfig::default();
+        let result = start_node(&config, "not-a-url", "also-not-a-url");
+        assert!(result.is_err());
     }
 }

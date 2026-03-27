@@ -486,12 +486,12 @@ function App() {
           </div>
 
           {/* Track info */}
-          <div className="w-44 min-w-0">
+          <div className="w-64 min-w-0">
             <div className="font-body-mono text-foreground truncate">{activeTrack.title}</div>
             <div className="font-small text-secondary-foreground truncate">
               {activeTrack.artist}
               {session && (
-                <span className="text-amber ml-2">⚡ {Math.round(100 / 60)} sats/min</span>
+                <span className="text-amber ml-2">⚡ 100 sats/min</span>
               )}
             </div>
           </div>

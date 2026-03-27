@@ -24,7 +24,7 @@ log = "0.4"
 nostr-sdk = "0.39"
 keyring = { version = "3", features = ["apple-native"] }
 sha2 = "0.10"
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "blocking"] }
 base64 = "0.22"
 lofty = "0.22.2"
 symphonia = { version = "0.5.5", features = ["mp3", "aiff"] }
