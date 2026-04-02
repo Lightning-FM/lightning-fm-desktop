@@ -21,6 +21,17 @@ interface LocalLoadResult {
   cache_path: string;
 }
 
+interface CatalogTrack {
+  hash: string;
+  cachePath: string;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  durationSecs: number;
+  format: string;
+  artworkDataUrl: string | null;
+}
+
 interface CreditsInfo {
   remaining_sats: number;
   total_granted: number;
@@ -257,60 +268,44 @@ function App() {
   }
 
   async function loadTestCatalog() {
-    const loaded: LibraryTrack[] = [];
-
-    for (const artistGroup of TEST_CATALOG) {
-      for (const title of artistGroup.tracks) {
-        try {
-          const filePath = await resolveTestPath(artistGroup.artist, title);
-          const result = await invoke<LocalLoadResult>("playback_load_local", { filePath });
-
-          // Read metadata from the file for duration, format, artwork
-          let meta: AudioMetadata | null = null;
-          let artworkDataUrl: string | null = null;
-          try {
-            meta = await invoke<AudioMetadata>("metadata_read", { filePath });
-          } catch {}
-          try {
-            const art = await invoke<{ data_url: string } | null>("artwork_extract", { filePath });
-            if (art) artworkDataUrl = art.data_url;
-          } catch {}
-
-          loaded.push({
-            title: meta?.title || title,
-            artist: meta?.artist || artistGroup.artist,
-            album: meta?.album || "",
-            hash: result.hash,
-            cachePath: result.cache_path,
-            duration: meta?.duration_secs || 0,
-            format: meta?.format || "MP3",
-            artworkDataUrl,
-            eventId: null,
-            artistPubkey: null,
-            audioUrl: null,
-            lightningNodeId: null,
-            artistDirect: true,
-          });
-        } catch (e) {
-          console.warn(`Failed to load ${artistGroup.artist} - ${title}:`, e);
-        }
-      }
-    }
-
-    setTracks(loaded);
-    setLoading(false);
-  }
-
-  async function resolveTestPath(artist: string, title: string): Promise<string> {
+    const base = "/Users/mloseke/Documents/Ephemeral Empire/matt - projects/lightning-fm/app-desktop/test-data";
     const folderMap: Record<string, string> = {
       "Satoshi Sounds": "satoshi-sounds",
       "Keypair": "keypair",
       "The Relay Operators": "the-relay-operators",
       "Lightning Louise": "lightning-louise",
     };
-    const folder = folderMap[artist] || artist.toLowerCase().replace(/\s+/g, "-");
-    const base = "/Users/mloseke/Documents/Ephemeral Empire/matt - projects/lightning-fm/app-desktop/test-data";
-    return `${base}/${folder}/${title}.mp3`;
+
+    // Build flat list of entries for the batch command
+    const entries = TEST_CATALOG.flatMap(group => {
+      const folder = folderMap[group.artist] || group.artist.toLowerCase().replace(/\s+/g, "-");
+      return group.tracks.map(title => ({
+        artist: group.artist,
+        filePath: `${base}/${folder}/${title}.mp3`,
+      }));
+    });
+
+    try {
+      const results = await invoke<CatalogTrack[]>("catalog_load_batch", { entries });
+      setTracks(results.map(t => ({
+        title: t.title || "",
+        artist: t.artist || "",
+        album: t.album || "",
+        hash: t.hash,
+        cachePath: t.cachePath,
+        duration: t.durationSecs,
+        format: t.format,
+        artworkDataUrl: t.artworkDataUrl || null,
+        eventId: null,
+        artistPubkey: null,
+        audioUrl: null,
+        lightningNodeId: null,
+        artistDirect: true,
+      })));
+    } catch (e) {
+      console.error("Failed to load catalog:", e);
+    }
+    setLoading(false);
   }
 
   async function playTrack(track: LibraryTrack) {

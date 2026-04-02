@@ -376,6 +376,183 @@ pub fn playback_load_local(file_path: String) -> Result<LocalLoadResult, String>
     Ok(LocalLoadResult { hash, cache_path: path })
 }
 
+/// Batch-load an entire catalog of local files in one call.
+/// For each file: hashes it, caches it, reads metadata, extracts artwork.
+/// Replaces 3N sequential IPC calls with a single batch operation.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogEntry {
+    pub artist: String,
+    pub file_path: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogTrack {
+    pub hash: String,
+    pub cache_path: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub duration_secs: f64,
+    pub format: String,
+    pub artwork_data_url: Option<String>,
+}
+
+#[tauri::command]
+pub fn catalog_load_batch(entries: Vec<CatalogEntry>) -> Vec<CatalogTrack> {
+    // Process all tracks in parallel — each file's hash/metadata/artwork is independent
+    let handles: Vec<_> = entries.into_iter().map(|entry| {
+        std::thread::spawn(move || {
+            let path = Path::new(&entry.file_path);
+            if !path.exists() {
+                log::warn!("Catalog: file not found: {}", entry.file_path);
+                return None;
+            }
+
+            let (hash, cache_path) = crate::playback::load_local_file(&entry.file_path).ok()?;
+
+            let meta = crate::metadata::read_metadata(path).ok();
+            let artwork = crate::metadata::extract_artwork(path)
+                .ok()
+                .flatten()
+                .map(|a| a.data_url);
+
+            Some(CatalogTrack {
+                hash,
+                cache_path,
+                title: meta.as_ref().and_then(|m| m.title.clone()).or_else(|| Some(entry.artist.clone())),
+                artist: meta.as_ref().and_then(|m| m.artist.clone()).or_else(|| Some(entry.artist.clone())),
+                album: meta.as_ref().and_then(|m| m.album.clone()),
+                duration_secs: meta.as_ref().map(|m| m.duration_secs).unwrap_or(0.0),
+                format: meta.as_ref().map(|m| m.format.clone()).unwrap_or_else(|| "MP3".to_string()),
+                artwork_data_url: artwork,
+            })
+        })
+    }).collect();
+
+    handles.into_iter()
+        .filter_map(|h| h.join().ok().flatten())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── CatalogEntry deserialization (camelCase from frontend) ──
+
+    #[test]
+    fn catalog_entry_deserializes_camel_case() {
+        let json = r#"{"artist": "Keypair", "filePath": "/tmp/test.mp3"}"#;
+        let entry: CatalogEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.artist, "Keypair");
+        assert_eq!(entry.file_path, "/tmp/test.mp3");
+    }
+
+    #[test]
+    fn catalog_entry_rejects_snake_case() {
+        let json = r#"{"artist": "Keypair", "file_path": "/tmp/test.mp3"}"#;
+        let result: Result<CatalogEntry, _> = serde_json::from_str(json);
+        assert!(result.is_err(), "snake_case file_path should be rejected — frontend sends camelCase");
+    }
+
+    // ─── CatalogTrack serialization (camelCase to frontend) ─────
+
+    #[test]
+    fn catalog_track_serializes_camel_case() {
+        let track = CatalogTrack {
+            hash: "abc123".to_string(),
+            cache_path: "/tmp/cache/abc123".to_string(),
+            title: Some("dev_null".to_string()),
+            artist: Some("Keypair".to_string()),
+            album: None,
+            duration_secs: 169.0,
+            format: "MP3".to_string(),
+            artwork_data_url: Some("data:image/jpeg;base64,/9j/".to_string()),
+        };
+        let json = serde_json::to_string(&track).unwrap();
+
+        // Must be camelCase for the frontend
+        assert!(json.contains("cachePath"), "should serialize as cachePath, got: {}", json);
+        assert!(json.contains("durationSecs"), "should serialize as durationSecs, got: {}", json);
+        assert!(json.contains("artworkDataUrl"), "should serialize as artworkDataUrl, got: {}", json);
+
+        // Must NOT contain snake_case
+        assert!(!json.contains("cache_path"), "should not contain snake_case cache_path");
+        assert!(!json.contains("duration_secs"), "should not contain snake_case duration_secs");
+        assert!(!json.contains("artwork_data_url"), "should not contain snake_case artwork_data_url");
+    }
+
+    // ─── Batch loading ──────────────────────────────────────────
+
+    #[test]
+    fn catalog_load_batch_skips_missing_files() {
+        let entries = vec![
+            CatalogEntry { artist: "Test".to_string(), file_path: "/nonexistent/file.mp3".to_string() },
+            CatalogEntry { artist: "Test2".to_string(), file_path: "/also/missing.mp3".to_string() },
+        ];
+        let result = catalog_load_batch(entries);
+        assert!(result.is_empty(), "Missing files should be skipped, not error");
+    }
+
+    #[test]
+    fn catalog_load_batch_empty_input() {
+        let result = catalog_load_batch(vec![]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn catalog_load_batch_loads_real_files() {
+        let base = env!("CARGO_MANIFEST_DIR");
+        let test_file = format!("{}/../test-data/keypair/dev_null.mp3", base);
+
+        if !Path::new(&test_file).exists() {
+            // Skip if test data not available (CI)
+            return;
+        }
+
+        let entries = vec![
+            CatalogEntry { artist: "Keypair".to_string(), file_path: test_file },
+        ];
+        let result = catalog_load_batch(entries);
+        assert_eq!(result.len(), 1);
+
+        let track = &result[0];
+        assert!(!track.hash.is_empty());
+        assert!(!track.cache_path.is_empty());
+        assert!(track.duration_secs > 0.0, "Duration should be positive");
+        assert_eq!(track.format, "MP3");
+    }
+
+    #[test]
+    fn catalog_load_batch_parallel_produces_all_results() {
+        let base = env!("CARGO_MANIFEST_DIR");
+        let files = ["dev_null", "Display None", "finite dregs"];
+
+        let entries: Vec<CatalogEntry> = files.iter().filter_map(|title| {
+            let path = format!("{}/../test-data/keypair/{}.mp3", base, title);
+            if Path::new(&path).exists() {
+                Some(CatalogEntry { artist: "Keypair".to_string(), file_path: path })
+            } else {
+                None
+            }
+        }).collect();
+
+        if entries.is_empty() {
+            return; // Skip if test data not available
+        }
+
+        let expected_count = entries.len();
+        let result = catalog_load_batch(entries);
+        assert_eq!(result.len(), expected_count, "Parallel processing should return all tracks");
+
+        // Verify all hashes are unique
+        let hashes: std::collections::HashSet<&str> = result.iter().map(|t| t.hash.as_str()).collect();
+        assert_eq!(hashes.len(), expected_count, "Each track should have a unique hash");
+    }
+}
+
 /// Get cache stats (number of cached files, total size in bytes).
 #[derive(serde::Serialize)]
 pub struct CacheStats {
