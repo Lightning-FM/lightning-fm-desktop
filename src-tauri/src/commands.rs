@@ -705,17 +705,21 @@ pub fn stream_tick(
         // Record the payment in the session
         session.record_payment();
 
-        // Send keysend if artist has a Lightning node_id
+        // Send keysend with custom TLV metadata if artist has a Lightning node_id
         if let Some(ref node_id_hex) = session.lightning_node_id {
             let node_lock = ldk_state.node.lock().map_err(|e| e.to_string())?;
             if let Some(ref node) = *node_lock {
                 let pubkey = crate::streaming::parse_lightning_pubkey(node_id_hex)?;
                 let amount_msat = artist_sats * 1000;
+                let custom_tlvs = crate::streaming::build_custom_tlv_vec(
+                    &session.track_id,
+                    &session.artist_pubkey,
+                );
 
-                match node.spontaneous_payment().send(amount_msat, pubkey, None) {
+                match node.spontaneous_payment().send_with_custom_tlvs(amount_msat, pubkey, None, custom_tlvs) {
                     Ok(payment_id) => {
                         log::info!(
-                            "Keysend sent: {} sats ({} msat) to {}. Payment: {}. Track: {}",
+                            "Keysend sent: {} sats ({} msat) to {} with TLV metadata. Payment: {}. Track: {}",
                             artist_sats, amount_msat, node_id_hex, payment_id, session.track_id,
                         );
                     }
@@ -924,11 +928,11 @@ pub fn withdraw_onchain(
     let addr = addr.assume_checked();
 
     let txid = if let Some(sats) = amount_sats {
-        node.onchain_payment().send_to_address(&addr, sats)
+        node.onchain_payment().send_to_address(&addr, sats, None)
             .map_err(|e| format!("On-chain send failed: {:?}", e))?
     } else {
-        // Send all funds
-        node.onchain_payment().send_all_to_address(&addr)
+        // Send all funds (retain_reserves=false — sweep everything)
+        node.onchain_payment().send_all_to_address(&addr, false, None)
             .map_err(|e| format!("On-chain send-all failed: {:?}", e))?
     };
 

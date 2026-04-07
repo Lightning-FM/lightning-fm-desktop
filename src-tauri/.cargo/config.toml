@@ -1,0 +1,4 @@
+# Auto-sign the dev binary so macOS Keychain doesn't prompt on every rebuild.
+# tauri dev uses cargo run under the hood, which respects this runner config.
+[target.aarch64-apple-darwin]
+runner = ["bash", "-c", "codesign -s 'Apple Development: Matthew Loseke (49KYGLSLCZ)' -f \"$1\" && exec \"$1\" \"${@:2}\"", "--"]

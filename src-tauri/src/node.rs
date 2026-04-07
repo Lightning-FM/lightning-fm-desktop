@@ -160,7 +160,7 @@ pub fn start_node(config: &NodeConfig, esplora_url: &str, rgs_url: &str) -> Resu
     builder.set_chain_source_esplora(esplora_url.to_string(), None);
     builder.set_gossip_source_rgs(rgs_url.to_string());
 
-    builder.set_liquidity_source_lsps2(lsp_addr, lsp_pubkey, lsp_token);
+    builder.set_liquidity_source_lsps2(lsp_pubkey, lsp_addr, lsp_token);
     log::info!("LSPS2 configured: {} @ {}", lsp.node_id, lsp.address);
 
     if config.artist_mode {

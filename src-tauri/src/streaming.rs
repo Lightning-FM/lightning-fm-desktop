@@ -19,13 +19,8 @@ pub const MIRROR_RAKE_PERCENT: u64 = 10;
 /// TLV type for Lightning FM custom records in keysend.
 /// All types must be ODD per BOLT 1 ("it's OK to be odd" — even types are rejected
 /// by nodes that don't understand them).
-/// TODO: Wire into keysend when upgrading ldk-node to v0.7+ (v0.4 SpontaneousPayment::send
-/// hardcodes RecipientOnionFields::spontaneous_empty() with no custom TLV support).
-#[allow(dead_code)]
 pub const TLV_TRACK_ID: u64 = 696969;
-#[allow(dead_code)]
 pub const TLV_LISTENER_PUBKEY: u64 = 696971;
-#[allow(dead_code)]
 pub const TLV_TIMESTAMP: u64 = 696973;
 
 // ─── Rake Calculation ────────────────────────────────────────
@@ -71,6 +66,21 @@ pub fn build_tlv_records(track_id: &str, listener_pubkey: &str) -> PaymentTlvRec
         listener_pubkey: listener_pubkey.to_string(),
         timestamp,
     }
+}
+
+// ─── Custom TLV Record Construction ─────────────────────────
+
+use ldk_node::CustomTlvRecord;
+
+/// Build custom TLV records for a keysend payment.
+/// These are embedded in the onion payload so the artist knows what the payment is for.
+pub fn build_custom_tlv_vec(track_id: &str, listener_pubkey: &str) -> Vec<CustomTlvRecord> {
+    let records = build_tlv_records(track_id, listener_pubkey);
+    vec![
+        CustomTlvRecord { type_num: TLV_TRACK_ID, value: records.track_id.into_bytes() },
+        CustomTlvRecord { type_num: TLV_LISTENER_PUBKEY, value: records.listener_pubkey.into_bytes() },
+        CustomTlvRecord { type_num: TLV_TIMESTAMP, value: records.timestamp.to_be_bytes().to_vec() },
+    ]
 }
 
 // ─── Lightning Pubkey Parsing ────────────────────────────────

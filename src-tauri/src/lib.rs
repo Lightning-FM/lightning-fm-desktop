@@ -88,11 +88,13 @@ pub fn run() {
                     }
                 }
 
-                // Then stop the node
+                // Then stop the node.
                 if let Ok(mut lock) = state.inner().node.lock() {
                     if let Some(node) = lock.take() {
-                        let _: Result<(), _> = node.stop();
-                        log::info!("LDK node stopped on app exit");
+                        match node.stop() {
+                            Ok(()) => log::info!("LDK node stopped on app exit"),
+                            Err(e) => log::error!("LDK node stop failed: {:?}", e),
+                        }
                     }
                 }
             }

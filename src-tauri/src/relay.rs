@@ -16,8 +16,9 @@ const DEV_RELAYS: &[&str] = &[
 ];
 
 const PROD_RELAYS: &[&str] = &[
-    "wss://relay.damus.io",
+    "wss://relay.lightning.fm",
     "wss://nos.lol",
+    "wss://relay.damus.io",
     "wss://relay.nostr.band",
 ];
 

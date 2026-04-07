@@ -49,8 +49,11 @@ pub fn spawn_event_loop(
                         log::error!("Failed to emit ldk-event to frontend: {}", e);
                     }
 
-                    // Acknowledge so LDK pops it from the queue
-                    node.event_handled();
+                    // Acknowledge so LDK pops it from the queue.
+                    if let Err(e) = node.event_handled() {
+                        log::error!("LDK event_handled() failed: {:?} — stopping event loop", e);
+                        break;
+                    }
                 }
                 _ = shutdown_rx.changed() => {
                     if *shutdown_rx.borrow() {
@@ -72,6 +75,7 @@ fn map_event(event: &ldk_node::Event) -> LdkEventPayload {
             payment_id,
             payment_hash,
             amount_msat,
+            custom_records: _,
         } => LdkEventPayload {
             event_type: "payment_received".to_string(),
             payment_hash: Some(format!("{}", payment_hash)),
@@ -86,6 +90,7 @@ fn map_event(event: &ldk_node::Event) -> LdkEventPayload {
         ldk_node::Event::PaymentSuccessful {
             payment_id,
             payment_hash,
+            payment_preimage: _,
             fee_paid_msat,
         } => LdkEventPayload {
             event_type: "payment_successful".to_string(),
@@ -118,6 +123,7 @@ fn map_event(event: &ldk_node::Event) -> LdkEventPayload {
             payment_hash,
             claimable_amount_msat,
             claim_deadline: _,
+            custom_records: _,
         } => LdkEventPayload {
             event_type: "payment_claimable".to_string(),
             payment_hash: Some(format!("{}", payment_hash)),
@@ -173,6 +179,47 @@ fn map_event(event: &ldk_node::Event) -> LdkEventPayload {
             channel_id: Some(format!("{}", channel_id)),
             counterparty_node_id: counterparty_node_id.map(|n| n.to_string()),
             close_reason: reason.as_ref().map(|r| format!("{:?}", r)),
+        },
+
+        ldk_node::Event::PaymentForwarded { .. } => LdkEventPayload {
+            event_type: "payment_forwarded".to_string(),
+            payment_hash: None,
+            payment_id: None,
+            amount_msat: None,
+            fee_paid_msat: None,
+            channel_id: None,
+            counterparty_node_id: None,
+            close_reason: None,
+        },
+
+        ldk_node::Event::SplicePending {
+            channel_id,
+            counterparty_node_id,
+            ..
+        } => LdkEventPayload {
+            event_type: "splice_pending".to_string(),
+            payment_hash: None,
+            payment_id: None,
+            amount_msat: None,
+            fee_paid_msat: None,
+            channel_id: Some(format!("{}", channel_id)),
+            counterparty_node_id: Some(counterparty_node_id.to_string()),
+            close_reason: None,
+        },
+
+        ldk_node::Event::SpliceFailed {
+            channel_id,
+            counterparty_node_id,
+            ..
+        } => LdkEventPayload {
+            event_type: "splice_failed".to_string(),
+            payment_hash: None,
+            payment_id: None,
+            amount_msat: None,
+            fee_paid_msat: None,
+            channel_id: Some(format!("{}", channel_id)),
+            counterparty_node_id: Some(counterparty_node_id.to_string()),
+            close_reason: None,
         },
     }
 }

@@ -115,15 +115,36 @@ export function LibraryView({
     return sortDir === "asc" ? " ↑" : " ↓";
   }
 
-  // Loading state
+  // Loading state — skeleton rows that match track list layout
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="w-5 h-5 border-2 border-border border-t-amber rounded-full animate-spin mx-auto mb-3" />
-          <span className="font-body-mono text-muted-foreground">
-            Loading catalog...
-          </span>
+      <div className="h-full flex flex-col">
+        {/* Toolbar skeleton */}
+        <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border">
+          <div className="h-6 w-32 bg-border/50 animate-pulse" />
+          <div className="h-6 flex-1 max-w-xs bg-border/50 animate-pulse" />
+        </div>
+        {/* Column headers */}
+        <div className="shrink-0 flex items-center gap-3 px-3 py-1 border-b border-border">
+          <span className="font-label-mono text-muted-foreground uppercase tracking-wider w-8 text-right">#</span>
+          <span className="font-label-mono text-muted-foreground uppercase tracking-wider flex-1">Title</span>
+          <span className="font-label-mono text-muted-foreground uppercase tracking-wider w-12 text-right">Time</span>
+          <span className="font-label-mono text-muted-foreground uppercase tracking-wider w-10 text-right">Fmt</span>
+        </div>
+        {/* Skeleton rows */}
+        <div className="flex-1 overflow-hidden">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-3 py-1.5 border-b border-border/50">
+              <span className="w-8 text-right font-small text-muted-foreground/30">{i + 1}</span>
+              <div className="w-8 h-8 bg-border/30 animate-pulse" />
+              <div className="flex-1 flex flex-col gap-1">
+                <div className="h-3.5 bg-border/40 animate-pulse" style={{ width: `${40 + Math.random() * 30}%` }} />
+                <div className="h-3 bg-border/20 animate-pulse" style={{ width: `${20 + Math.random() * 20}%` }} />
+              </div>
+              <div className="w-12 h-3.5 bg-border/30 animate-pulse" />
+              <div className="w-10 h-3.5 bg-border/20 animate-pulse" />
+            </div>
+          ))}
         </div>
       </div>
     );
