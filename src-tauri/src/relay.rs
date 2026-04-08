@@ -12,6 +12,7 @@ use tokio::sync::Mutex as TokioMutex;
 /// Set LFM_NOSTR_RELAYS env var to override (comma-separated).
 /// Default: local dev relay. Production relays are only used when explicitly configured.
 const DEV_RELAYS: &[&str] = &[
+    "wss://relay.lightning.fm",
     "ws://localhost:7777",
 ];
 
@@ -497,7 +498,7 @@ mod tests {
     #[test]
     fn relay_list_tags_correct_structure() {
         let tags = build_relay_list_tags(PROD_RELAYS);
-        assert_eq!(tags.len(), 3);
+        assert_eq!(tags.len(), 4);
         for tag in &tags {
             let values = tag.as_slice();
             assert_eq!(values[0], "r");
@@ -506,10 +507,9 @@ mod tests {
     }
 
     #[test]
-    fn dev_relays_are_localhost() {
-        for relay in DEV_RELAYS {
-            assert!(relay.starts_with("ws://localhost"), "Dev relay should be localhost, got {}", relay);
-        }
+    fn dev_relays_include_lightning_fm_and_localhost() {
+        assert!(DEV_RELAYS.iter().any(|r| *r == "wss://relay.lightning.fm"), "Dev relays should include relay.lightning.fm");
+        assert!(DEV_RELAYS.iter().any(|r| r.starts_with("ws://localhost")), "Dev relays should include localhost");
     }
 
     #[test]
