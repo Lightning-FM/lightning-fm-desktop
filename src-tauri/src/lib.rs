@@ -24,7 +24,7 @@ use commands::{
     // Nostr identity
     identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
     // Relay & browse
-    relay_connect, browse_tracks,
+    relay_connect, browse_tracks, load_catalog,
     // Profile
     profile_fetch, profile_set,
     // Upload & publish
@@ -57,7 +57,7 @@ pub fn run() {
             // Nostr identity
             identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
             // Relay & browse
-            relay_connect, browse_tracks,
+            relay_connect, browse_tracks, load_catalog,
             // Profile
             profile_fetch, profile_set,
             // Upload & publish

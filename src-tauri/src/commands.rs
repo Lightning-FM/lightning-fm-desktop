@@ -228,6 +228,83 @@ pub async fn browse_tracks(
     }
 }
 
+/// Load entire catalog: connect to relays, fetch tracks + profiles in batched requests.
+/// Returns tracks with artist names already resolved. Single call from frontend.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogItem {
+    pub event_id: String,
+    pub artist_pubkey: String,
+    pub artist_npub: String,
+    pub artist_name: Option<String>,
+    pub artist_picture: Option<String>,
+    pub title: String,
+    pub slug: String,
+    pub duration_secs: Option<u64>,
+    pub audio_hash: Option<String>,
+    pub audio_url: Option<String>,
+    pub fallback_url: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size: Option<u64>,
+    pub preview_secs: Option<u64>,
+    pub lightning_node_id: Option<String>,
+    pub created_at: u64,
+}
+
+#[tauri::command]
+pub async fn load_catalog(
+    identity_state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<Vec<CatalogItem>, String> {
+    // Connect to relays if not already connected
+    {
+        let client_lock = relay_state.client.lock().await;
+        if client_lock.is_none() {
+            drop(client_lock);
+            // Connect anonymously or with identity if available
+            let keys = identity_state.keys.lock()
+                .ok()
+                .and_then(|guard| guard.clone());
+            let client = crate::relay::connect(keys.as_ref()).await?;
+            let mut client_lock = relay_state.client.lock().await;
+            *client_lock = Some(client);
+        }
+    }
+
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Failed to connect to relays")?;
+
+    // Fetch tracks + profiles in two batched relay requests
+    let (tracks, profiles) = crate::relay::fetch_catalog(client).await?;
+
+    // Merge profiles into tracks
+    let items: Vec<CatalogItem> = tracks.into_iter().map(|t| {
+        let profile = profiles.get(&t.artist_pubkey);
+        CatalogItem {
+            artist_name: profile.and_then(|p| p.display_name.clone().or(p.name.clone())),
+            artist_picture: profile.and_then(|p| p.picture.clone()),
+            event_id: t.event_id,
+            artist_pubkey: t.artist_pubkey,
+            artist_npub: t.artist_npub,
+            title: t.title,
+            slug: t.slug,
+            duration_secs: t.duration_secs,
+            audio_hash: t.audio_hash,
+            audio_url: t.audio_url,
+            fallback_url: t.fallback_url,
+            mime_type: t.mime_type,
+            file_size: t.file_size,
+            preview_secs: t.preview_secs,
+            lightning_node_id: t.lightning_node_id,
+            created_at: t.created_at,
+        }
+    }).collect();
+
+    log::info!("Catalog loaded: {} items", items.len());
+    Ok(items)
+}
+
 // ─── Profile Commands ───────────────────────────────────────
 
 /// Fetch the user's Nostr profile (kind 0) from relays.

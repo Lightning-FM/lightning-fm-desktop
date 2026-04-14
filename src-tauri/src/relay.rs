@@ -18,9 +18,6 @@ const DEV_RELAYS: &[&str] = &[
 
 const PROD_RELAYS: &[&str] = &[
     "wss://relay.lightning.fm",
-    "wss://nos.lol",
-    "wss://relay.damus.io",
-    "wss://relay.nostr.band",
 ];
 
 fn get_relays() -> Vec<String> {
@@ -100,7 +97,7 @@ pub async fn fetch_tracks(client: &Client) -> Result<Vec<TrackInfo>, String> {
         .limit(100);
 
     let events = client
-        .fetch_events(filter, std::time::Duration::from_secs(10))
+        .fetch_events(filter, std::time::Duration::from_secs(3))
         .await
         .map_err(|e| format!("Failed to fetch tracks: {}", e))?;
 
@@ -111,6 +108,78 @@ pub async fn fetch_tracks(client: &Client) -> Result<Vec<TrackInfo>, String> {
 
     log::info!("Fetched {} tracks from relays", tracks.len());
     Ok(tracks)
+}
+
+/// Fetch tracks + artist profiles in two batched relay requests.
+/// Returns tracks with artist names already resolved where possible.
+pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::collections::HashMap<String, ProfileData>), String> {
+    // Step 1: fetch kind 31337 tracks (3s timeout)
+    let track_filter = Filter::new()
+        .kind(Kind::Custom(KIND_TRACK))
+        .limit(100);
+
+    let track_events = client
+        .fetch_events(track_filter, std::time::Duration::from_secs(3))
+        .await
+        .map_err(|e| format!("Failed to fetch tracks: {}", e))?;
+
+    let tracks: Vec<TrackInfo> = track_events
+        .iter()
+        .filter_map(|event| parse_track_event(event))
+        .filter(|t| t.audio_url.is_some() && t.audio_hash.is_some()) // only playable tracks
+        .collect();
+
+    log::info!("Fetched {} playable tracks from relays", tracks.len());
+
+    // Step 2: collect unique pubkeys, batch fetch kind 0 profiles
+    let pubkeys: Vec<PublicKey> = tracks
+        .iter()
+        .filter_map(|t| PublicKey::parse(&t.artist_pubkey).ok())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let profiles = if !pubkeys.is_empty() {
+        log::info!("Resolving {} artist profiles...", pubkeys.len());
+
+        let profile_filter = Filter::new()
+            .kind(Kind::Metadata)
+            .authors(pubkeys);
+
+        let profile_events = match client
+            .fetch_events(profile_filter, std::time::Duration::from_secs(3))
+            .await
+        {
+            Ok(events) => events,
+            Err(e) => {
+                log::warn!("Profile fetch failed: {}", e);
+                return Ok((tracks, std::collections::HashMap::new()));
+            }
+        };
+
+        // Dedupe by pubkey, keep latest kind 0 per author
+        let mut latest: std::collections::HashMap<String, ProfileData> = std::collections::HashMap::new();
+        let mut latest_ts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        for event in profile_events.iter() {
+            let hex = event.pubkey.to_hex();
+            let ts = event.created_at.as_u64();
+            if ts > *latest_ts.get(&hex).unwrap_or(&0) {
+                latest_ts.insert(hex.clone(), ts);
+                latest.insert(hex, parse_profile_content(&event.content));
+            }
+        }
+
+        for (hex, profile) in &latest {
+            log::info!("Profile: {} → {}", &hex[..12], profile.display_name.as_deref().unwrap_or("(no name)"));
+        }
+
+        latest
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    log::info!("Catalog ready: {} tracks, {} profiles", tracks.len(), profiles.len());
+    Ok((tracks, profiles))
 }
 
 /// Publish a track metadata event (kind 31337)

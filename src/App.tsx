@@ -16,17 +16,6 @@ type View = "library" | "upload" | "discover" | "dashboard" | "settings";
 
 // ─── Types ──────────────────────────────────────────────────
 
-interface CatalogTrack {
-  hash: string;
-  cachePath: string;
-  title: string | null;
-  artist: string | null;
-  album: string | null;
-  durationSecs: number;
-  format: string;
-  artworkDataUrl: string | null;
-}
-
 interface CreditsInfo {
   remaining_sats: number;
   total_granted: number;
@@ -54,23 +43,25 @@ interface IntervalResult {
   credits_depleted: boolean;
 }
 
-// ─── Relay track type (from browse_tracks command) ──────────
+// ─── Catalog item type (from load_catalog command) ──────────
 
-interface TrackInfo {
-  event_id: string;
-  artist_pubkey: string;
-  artist_npub: string;
+interface CatalogItem {
+  eventId: string;
+  artistPubkey: string;
+  artistNpub: string;
+  artistName: string | null;
+  artistPicture: string | null;
   title: string;
   slug: string;
-  duration_secs: number | null;
-  audio_hash: string | null;
-  audio_url: string | null;
-  fallback_url: string | null;
-  mime_type: string | null;
-  file_size: number | null;
-  preview_secs: number | null;
-  lightning_node_id: string | null;
-  created_at: number;
+  durationSecs: number | null;
+  audioHash: string | null;
+  audioUrl: string | null;
+  fallbackUrl: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  previewSecs: number | null;
+  lightningNodeId: string | null;
+  createdAt: number;
 }
 
 // ─── Identity ───────────────────────────────────────────────
@@ -244,77 +235,27 @@ function App() {
 
   async function loadCatalog() {
     try {
-      // Connect to Nostr relays
-      await invoke("relay_connect");
-      console.log("Connected to relays");
+      // Single call: connects to relays, fetches tracks + profiles, returns merged result
+      const catalog = await invoke<CatalogItem[]>("load_catalog");
+      console.log(`Catalog loaded: ${catalog.length} tracks`);
 
-      // Fetch track catalog from relays (kind 31337 events)
-      const relayTracks = await invoke<TrackInfo[]>("browse_tracks");
-      console.log(`Fetched ${relayTracks.length} tracks from relays`);
-
-      if (relayTracks.length > 0) {
-        setTracks(relayTracks.map(t => ({
-          title: t.title,
-          artist: t.artist_npub.slice(0, 12) + "...", // resolved later via profile
-          album: "",
-          hash: t.audio_hash || t.event_id,
-          cachePath: "", // filled when playback starts
-          duration: t.duration_secs || 0,
-          format: t.mime_type || "audio/mpeg",
-          artworkDataUrl: null,
-          eventId: t.event_id,
-          artistPubkey: t.artist_pubkey,
-          audioUrl: t.audio_url,
-          lightningNodeId: t.lightning_node_id,
-          artistDirect: true,
-        })));
-        setLoading(false);
-        return;
-      }
+      setTracks(catalog.map(t => ({
+        title: t.title,
+        artist: t.artistName || t.artistNpub.slice(0, 12) + "...",
+        album: "",
+        hash: t.audioHash || t.eventId,
+        cachePath: "",
+        duration: t.durationSecs || 0,
+        format: t.mimeType || "audio/mpeg",
+        artworkDataUrl: t.artistPicture || null,
+        eventId: t.eventId,
+        artistPubkey: t.artistPubkey,
+        audioUrl: t.audioUrl,
+        lightningNodeId: t.lightningNodeId,
+        artistDirect: true,
+      })));
     } catch (e) {
-      console.warn("Relay catalog fetch failed, falling back to local:", e);
-    }
-
-    // Dev-only fallback: load from local test-data (only in dev mode, not release builds)
-    if (import.meta.env.DEV) {
-      try {
-        const base = await invoke<string>("get_test_data_dir");
-        const testArtists = [
-          { artist: "Satoshi Sounds", folder: "satoshi-sounds", tracks: [
-            "21M", "Block Zero", "Cathedrals of Code", "Chancellor's On The Brink",
-            "Difficulty Adjustment", "Genesis Clock", "Ledgerly",
-            "Pierre Looked This One Over", "Saw Again From The Pier", "Timechain"
-          ]},
-          { artist: "Keypair", folder: "keypair", tracks: [
-            "dev_null", "Display None", "finite dregs", "Infinite Anticipation",
-            "Lost Protocol", "never dull", "Public _ Private",
-            "Recursive Writing", "Schnorrd", "When Hashes Collide"
-          ]},
-          { artist: "The Relay Operators", folder: "the-relay-operators", tracks: [
-            "1010001__s390v", "Do-again Ants", "Kind 1", "Packet Light",
-            "Propagation", "Protocol Handshake", "Tail Minus",
-            "Tippity", "Unicode __ Unicorn", "Websocket Wrench"
-          ]},
-          { artist: "Lightning Louise", folder: "lightning-louise", tracks: [
-            "Atlas Node", "Circuit Wraith", "Cypherpunk Lullaby", "Gateway Flow",
-            "Grounded Clouds", "Keysend", "Open Channel",
-            "Signal Path", "The Routing Table", "Voltage Ghost"
-          ]},
-        ];
-        const entries = testArtists.flatMap(g =>
-          g.tracks.map(title => ({ artist: g.artist, filePath: `${base}/${g.folder}/${title}.mp3` }))
-        );
-        const results = await invoke<CatalogTrack[]>("catalog_load_batch", { entries });
-        setTracks(results.map(t => ({
-          title: t.title || "", artist: t.artist || "", album: t.album || "",
-          hash: t.hash, cachePath: t.cachePath, duration: t.durationSecs,
-          format: t.format, artworkDataUrl: t.artworkDataUrl || null,
-          eventId: null, artistPubkey: null, audioUrl: null,
-          lightningNodeId: null, artistDirect: true,
-        })));
-      } catch (e) {
-        console.error("Local catalog fallback also failed:", e);
-      }
+      console.error("Catalog load failed:", e);
     }
     setLoading(false);
   }
