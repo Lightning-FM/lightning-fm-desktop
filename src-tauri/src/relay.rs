@@ -74,9 +74,13 @@ pub struct TrackInfo {
     pub created_at: u64,
 }
 
-/// Connect to Nostr relays with the user's keys
-pub async fn connect(keys: &Keys) -> Result<Arc<Client>, String> {
-    let client = Client::new(keys.clone());
+/// Connect to Nostr relays. If keys are provided, the client can sign events
+/// (publish, upload, etc.). If None, connects in read-only mode for browsing.
+pub async fn connect(keys: Option<&Keys>) -> Result<Arc<Client>, String> {
+    let client = match keys {
+        Some(k) => Client::new(k.clone()),
+        None => Client::default(),
+    };
     let relays = get_relays();
 
     for relay in &relays {

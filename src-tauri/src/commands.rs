@@ -194,22 +194,25 @@ pub fn identity_delete(state: State<IdentityState>) -> Result<String, String> {
 
 // ─── Relay & Browse Commands ────────────────────────────────
 
-/// Connect to Nostr relays. Requires an identity to be loaded.
+/// Connect to Nostr relays. Uses identity keys if available, otherwise
+/// connects in read-only mode (anonymous browsing, no signing).
 #[tauri::command]
 pub async fn relay_connect(
     identity_state: State<'_, IdentityState>,
     relay_state: State<'_, RelayState>,
 ) -> Result<String, String> {
-    let keys = {
-        let keys_lock = identity_state.keys.lock().map_err(|e| e.to_string())?;
-        keys_lock.clone().ok_or("No identity loaded. Create or import one first.")?
-    };
+    let keys = identity_state.keys.lock()
+        .ok()
+        .and_then(|guard| guard.clone());
 
-    let client = crate::relay::connect(&keys).await?;
+    let client = crate::relay::connect(keys.as_ref()).await?;
     let mut client_lock = relay_state.client.lock().await;
     *client_lock = Some(client);
 
-    Ok("Connected to relays".to_string())
+    match keys {
+        Some(_) => Ok("Connected to relays (authenticated)".to_string()),
+        None => Ok("Connected to relays (anonymous)".to_string()),
+    }
 }
 
 /// Fetch all tracks from connected relays

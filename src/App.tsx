@@ -86,7 +86,6 @@ interface IdentityInfo {
 
 function App() {
   const [identity, setIdentity] = useState<IdentityInfo | null>(null);
-  const [identityChecked, setIdentityChecked] = useState(false);
   const [view, setView] = useState<View>("library");
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,9 +100,10 @@ function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const intervalRef = useRef<number | null>(null);
 
-  // Check for existing identity on mount
+  // On mount: check identity, then connect relays and load catalog (always)
   useEffect(() => {
-    async function checkIdentity() {
+    async function startup() {
+      // Check for existing identity (non-blocking)
       try {
         const existing = await invoke<IdentityInfo | null>("identity_check");
         if (existing) {
@@ -112,15 +112,16 @@ function App() {
       } catch (e) {
         console.warn("Identity check failed:", e);
       }
-      setIdentityChecked(true);
+
+      // Always connect relays and load catalog — works with or without identity
+      loadCatalog();
     }
-    checkIdentity();
+    startup();
   }, []);
 
-  // Connect to relays, load catalog, credits, and start LDK node after identity
+  // When identity becomes available: activate authenticated features
   useEffect(() => {
     if (identity) {
-      loadCatalog();
       loadCredits();
       startLdkNode();
     }
@@ -324,16 +325,19 @@ function App() {
     setActiveTrack(track);
     setSatsPaid(0);
 
-    try {
-      const newSession = await invoke<StreamSession>("stream_start", {
-        trackId: track.hash,
-        artistPubkey: track.artistPubkey || "test-artist-" + track.artist.toLowerCase().replace(/\s+/g, "-"),
-        lightningNodeId: track.lightningNodeId || undefined,
-        artistDirect: track.artistDirect,
-      });
-      setSession(newSession);
-    } catch (e) {
-      console.error("Failed to start stream:", e);
+    // Start streaming payment session only if identity exists
+    if (identity) {
+      try {
+        const newSession = await invoke<StreamSession>("stream_start", {
+          trackId: track.hash,
+          artistPubkey: track.artistPubkey || "test-artist-" + track.artist.toLowerCase().replace(/\s+/g, "-"),
+          lightningNodeId: track.lightningNodeId || undefined,
+          artistDirect: track.artistDirect,
+        });
+        setSession(newSession);
+      } catch (e) {
+        console.error("Failed to start stream:", e);
+      }
     }
 
     if (audioRef.current) {
@@ -387,21 +391,9 @@ function App() {
     audioRef.current.currentTime = pct * duration;
   }
 
-  // Show loading while checking keychain for existing identity
-  if (!identityChecked) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="w-5 h-5 border-2 border-border border-t-amber rounded-full animate-spin mx-auto mb-3" />
-          <span className="font-body-mono text-muted-foreground">Loading...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // Show onboarding if no identity
-  if (!identity) {
-    return <OnboardingView onComplete={setIdentity} />;
+  // Show onboarding if user explicitly navigates to it
+  if (view === "settings" && !identity) {
+    return <OnboardingView onComplete={(id) => { setIdentity(id); setView("library"); }} />;
   }
 
   return (
@@ -415,9 +407,16 @@ function App() {
         <span className="font-small text-muted-foreground">
           {tracks.length} tracks
         </span>
-        {identity && (
+        {identity ? (
           <span className="font-small text-muted-foreground">
             · {identity.npub.slice(0, 12)}...
+          </span>
+        ) : (
+          <span
+            className="font-small text-amber cursor-pointer hover:underline"
+            onClick={() => setView("settings")}
+          >
+            Sign In
           </span>
         )}
         {credits && (
