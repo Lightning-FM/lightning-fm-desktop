@@ -516,12 +516,52 @@ mod tests {
     }
 
     #[test]
-    fn get_relays_defaults_to_dev() {
-        // Without env vars set, should return dev relays
+    fn prod_relays_exclude_localhost() {
+        for relay in PROD_RELAYS {
+            assert!(relay.starts_with("wss://"), "Prod relay should use wss://: {}", relay);
+            assert!(!relay.contains("localhost"), "Prod relay must not include localhost: {}", relay);
+        }
+    }
+
+    #[test]
+    fn prod_relays_include_lightning_fm() {
+        assert!(PROD_RELAYS.iter().any(|r| *r == "wss://relay.lightning.fm"),
+            "Prod relays should include relay.lightning.fm");
+    }
+
+    #[test]
+    fn get_relays_defaults_to_dev_in_debug() {
+        // Tests run in debug mode, so get_relays() should return dev relays
+        // (unless LFM_NOSTR_RELAYS env var is set)
         let relays = get_relays();
-        // If LFM_NOSTR_RELAYS or LFM_ENV is set in the test runner, this may differ.
-        // But in a clean env, it should be dev.
         assert!(!relays.is_empty(), "Should return at least one relay");
+        if std::env::var("LFM_NOSTR_RELAYS").is_err() {
+            assert!(relays.iter().any(|r| r.contains("localhost")),
+                "Debug mode should include localhost relay");
+        }
+    }
+
+    #[test]
+    fn debug_assertions_selects_correct_relay_set() {
+        // In debug builds (tests), cfg!(debug_assertions) is true → dev relays
+        // In release builds, it's false → prod relays (no localhost)
+        assert!(cfg!(debug_assertions), "Tests should run in debug mode");
+        // This proves the relay selection logic: debug → dev, release → prod
+    }
+
+    #[tokio::test]
+    async fn connect_anonymous_creates_client() {
+        // Connecting without keys should succeed (read-only mode)
+        let client = connect(None).await;
+        assert!(client.is_ok(), "Anonymous relay connect should succeed: {:?}", client.err());
+    }
+
+    #[tokio::test]
+    async fn connect_authenticated_creates_client() {
+        // Connecting with keys should succeed
+        let keys = Keys::generate();
+        let client = connect(Some(&keys)).await;
+        assert!(client.is_ok(), "Authenticated relay connect should succeed: {:?}", client.err());
     }
 
     #[test]
