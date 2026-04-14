@@ -54,30 +54,24 @@ interface IntervalResult {
   credits_depleted: boolean;
 }
 
-// ─── Test catalog (loaded from test-data/) ──────────────────
+// ─── Relay track type (from browse_tracks command) ──────────
 
-const TEST_CATALOG = [
-  { artist: "Satoshi Sounds", tracks: [
-    "21M", "Block Zero", "Cathedrals of Code", "Chancellor's On The Brink",
-    "Difficulty Adjustment", "Genesis Clock", "Ledgerly",
-    "Pierre Looked This One Over", "Saw Again From The Pier", "Timechain"
-  ]},
-  { artist: "Keypair", tracks: [
-    "dev_null", "Display None", "finite dregs", "Infinite Anticipation",
-    "Lost Protocol", "never dull", "Public _ Private",
-    "Recursive Writing", "Schnorrd", "When Hashes Collide"
-  ]},
-  { artist: "The Relay Operators", tracks: [
-    "1010001__s390v", "Do-again Ants", "Kind 1", "Packet Light",
-    "Propagation", "Protocol Handshake", "Tail Minus",
-    "Tippity", "Unicode __ Unicorn", "Websocket Wrench"
-  ]},
-  { artist: "Lightning Louise", tracks: [
-    "Atlas Node", "Circuit Wraith", "Cypherpunk Lullaby", "Gateway Flow",
-    "Grounded Clouds", "Keysend", "Open Channel",
-    "Signal Path", "The Routing Table", "Voltage Ghost"
-  ]},
-];
+interface TrackInfo {
+  event_id: string;
+  artist_pubkey: string;
+  artist_npub: string;
+  title: string;
+  slug: string;
+  duration_secs: number | null;
+  audio_hash: string | null;
+  audio_url: string | null;
+  fallback_url: string | null;
+  mime_type: string | null;
+  file_size: number | null;
+  preview_secs: number | null;
+  lightning_node_id: string | null;
+  created_at: number;
+}
 
 // ─── Identity ───────────────────────────────────────────────
 
@@ -123,10 +117,10 @@ function App() {
     checkIdentity();
   }, []);
 
-  // Load test tracks, credits, and start LDK node after identity is confirmed
+  // Connect to relays, load catalog, credits, and start LDK node after identity
   useEffect(() => {
     if (identity) {
-      loadTestCatalog();
+      loadCatalog();
       loadCredits();
       startLdkNode();
     }
@@ -247,43 +241,77 @@ function App() {
     } catch {}
   }
 
-  async function loadTestCatalog() {
-    const base = "/Users/mloseke/Documents/Ephemeral Empire/matt - projects/lightning-fm/app-desktop/test-data";
-    const folderMap: Record<string, string> = {
-      "Satoshi Sounds": "satoshi-sounds",
-      "Keypair": "keypair",
-      "The Relay Operators": "the-relay-operators",
-      "Lightning Louise": "lightning-louise",
-    };
-
-    // Build flat list of entries for the batch command
-    const entries = TEST_CATALOG.flatMap(group => {
-      const folder = folderMap[group.artist] || group.artist.toLowerCase().replace(/\s+/g, "-");
-      return group.tracks.map(title => ({
-        artist: group.artist,
-        filePath: `${base}/${folder}/${title}.mp3`,
-      }));
-    });
-
+  async function loadCatalog() {
     try {
+      // Connect to Nostr relays
+      await invoke("relay_connect");
+      console.log("Connected to relays");
+
+      // Fetch track catalog from relays (kind 31337 events)
+      const relayTracks = await invoke<TrackInfo[]>("browse_tracks");
+      console.log(`Fetched ${relayTracks.length} tracks from relays`);
+
+      if (relayTracks.length > 0) {
+        setTracks(relayTracks.map(t => ({
+          title: t.title,
+          artist: t.artist_npub.slice(0, 12) + "...", // resolved later via profile
+          album: "",
+          hash: t.audio_hash || t.event_id,
+          cachePath: "", // filled when playback starts
+          duration: t.duration_secs || 0,
+          format: t.mime_type || "audio/mpeg",
+          artworkDataUrl: null,
+          eventId: t.event_id,
+          artistPubkey: t.artist_pubkey,
+          audioUrl: t.audio_url,
+          lightningNodeId: t.lightning_node_id,
+          artistDirect: true,
+        })));
+        setLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.warn("Relay catalog fetch failed, falling back to local:", e);
+    }
+
+    // Dev fallback: load from local test-data if relays returned nothing
+    try {
+      const base = await invoke<string>("get_test_data_dir");
+      const testArtists = [
+        { artist: "Satoshi Sounds", folder: "satoshi-sounds", tracks: [
+          "21M", "Block Zero", "Cathedrals of Code", "Chancellor's On The Brink",
+          "Difficulty Adjustment", "Genesis Clock", "Ledgerly",
+          "Pierre Looked This One Over", "Saw Again From The Pier", "Timechain"
+        ]},
+        { artist: "Keypair", folder: "keypair", tracks: [
+          "dev_null", "Display None", "finite dregs", "Infinite Anticipation",
+          "Lost Protocol", "never dull", "Public _ Private",
+          "Recursive Writing", "Schnorrd", "When Hashes Collide"
+        ]},
+        { artist: "The Relay Operators", folder: "the-relay-operators", tracks: [
+          "1010001__s390v", "Do-again Ants", "Kind 1", "Packet Light",
+          "Propagation", "Protocol Handshake", "Tail Minus",
+          "Tippity", "Unicode __ Unicorn", "Websocket Wrench"
+        ]},
+        { artist: "Lightning Louise", folder: "lightning-louise", tracks: [
+          "Atlas Node", "Circuit Wraith", "Cypherpunk Lullaby", "Gateway Flow",
+          "Grounded Clouds", "Keysend", "Open Channel",
+          "Signal Path", "The Routing Table", "Voltage Ghost"
+        ]},
+      ];
+      const entries = testArtists.flatMap(g =>
+        g.tracks.map(title => ({ artist: g.artist, filePath: `${base}/${g.folder}/${title}.mp3` }))
+      );
       const results = await invoke<CatalogTrack[]>("catalog_load_batch", { entries });
       setTracks(results.map(t => ({
-        title: t.title || "",
-        artist: t.artist || "",
-        album: t.album || "",
-        hash: t.hash,
-        cachePath: t.cachePath,
-        duration: t.durationSecs,
-        format: t.format,
-        artworkDataUrl: t.artworkDataUrl || null,
-        eventId: null,
-        artistPubkey: null,
-        audioUrl: null,
-        lightningNodeId: null,
-        artistDirect: true,
+        title: t.title || "", artist: t.artist || "", album: t.album || "",
+        hash: t.hash, cachePath: t.cachePath, duration: t.durationSecs,
+        format: t.format, artworkDataUrl: t.artworkDataUrl || null,
+        eventId: null, artistPubkey: null, audioUrl: null,
+        lightningNodeId: null, artistDirect: true,
       })));
     } catch (e) {
-      console.error("Failed to load catalog:", e);
+      console.error("Local catalog fallback also failed:", e);
     }
     setLoading(false);
   }
@@ -310,9 +338,20 @@ function App() {
 
     if (audioRef.current) {
       try {
-        const dataUrl = await invoke<string>("playback_read_audio", {
-          filePath: track.cachePath,
-        });
+        let filePath = track.cachePath;
+
+        // For relay tracks: fetch audio from Blossom CDN, cache it, get local path
+        if (!filePath && track.audioUrl && track.hash) {
+          const urls = [track.audioUrl];
+          const result = await invoke<{ cache_path: string; artist_direct: boolean }>(
+            "playback_fetch", { hash: track.hash, urls }
+          );
+          filePath = result.cache_path;
+          // Update the track's cachePath so subsequent plays skip the fetch
+          track.cachePath = filePath;
+        }
+
+        const dataUrl = await invoke<string>("playback_read_audio", { filePath });
         audioRef.current.src = dataUrl;
         audioRef.current.play();
         setIsPlaying(true);

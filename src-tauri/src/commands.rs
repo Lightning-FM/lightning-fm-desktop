@@ -1,7 +1,7 @@
 // Lightning FM — Tauri commands
 // Callable from the React frontend via invoke().
 
-use tauri::State;
+use tauri::{State, AppHandle, Manager};
 use crate::node::{LdkState, NodeInfo, NodeConfig, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
 use crate::relay::{RelayState, TrackInfo, ProfileData};
@@ -374,6 +374,30 @@ pub struct LocalLoadResult {
 pub fn playback_load_local(file_path: String) -> Result<LocalLoadResult, String> {
     let (hash, path) = crate::playback::load_local_file(&file_path)?;
     Ok(LocalLoadResult { hash, cache_path: path })
+}
+
+/// Resolve the test-data directory path. In production builds, looks in the
+/// bundled resources. In dev mode, falls back to the project-relative path.
+#[tauri::command]
+pub fn get_test_data_dir(app: AppHandle) -> Result<String, String> {
+    // Production: bundled resources inside the .app
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join("test-data");
+        if bundled.exists() {
+            return Ok(bundled.to_string_lossy().to_string());
+        }
+    }
+
+    // Dev: project-relative (src-tauri/../test-data)
+    let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|p| p.join("test-data"))
+        .unwrap_or_default();
+    if dev_path.exists() {
+        return Ok(dev_path.to_string_lossy().to_string());
+    }
+
+    Err("Test data directory not found".to_string())
 }
 
 /// Batch-load an entire catalog of local files in one call.

@@ -41,7 +41,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "Apple Development: Matthew Loseke (49KYGLSLCZ)"
+      "signingIdentity": "Developer ID Application: Matthew Loseke (9MA7EHBZXE)"
     }
   }
 }

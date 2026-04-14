@@ -35,7 +35,7 @@ use commands::{
     withdraw_lightning, withdraw_onchain,
     // Playback
     playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
-    catalog_load_batch,
+    catalog_load_batch, get_test_data_dir,
     // Credits
     credits_info, credits_deduct,
     // Streaming payments
@@ -68,7 +68,7 @@ pub fn run() {
             withdraw_lightning, withdraw_onchain,
             // Playback
             playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
-            catalog_load_batch,
+            catalog_load_batch, get_test_data_dir,
             // Credits
             credits_info, credits_deduct,
             // Streaming payments
