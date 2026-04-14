@@ -275,44 +275,46 @@ function App() {
       console.warn("Relay catalog fetch failed, falling back to local:", e);
     }
 
-    // Dev fallback: load from local test-data if relays returned nothing
-    try {
-      const base = await invoke<string>("get_test_data_dir");
-      const testArtists = [
-        { artist: "Satoshi Sounds", folder: "satoshi-sounds", tracks: [
-          "21M", "Block Zero", "Cathedrals of Code", "Chancellor's On The Brink",
-          "Difficulty Adjustment", "Genesis Clock", "Ledgerly",
-          "Pierre Looked This One Over", "Saw Again From The Pier", "Timechain"
-        ]},
-        { artist: "Keypair", folder: "keypair", tracks: [
-          "dev_null", "Display None", "finite dregs", "Infinite Anticipation",
-          "Lost Protocol", "never dull", "Public _ Private",
-          "Recursive Writing", "Schnorrd", "When Hashes Collide"
-        ]},
-        { artist: "The Relay Operators", folder: "the-relay-operators", tracks: [
-          "1010001__s390v", "Do-again Ants", "Kind 1", "Packet Light",
-          "Propagation", "Protocol Handshake", "Tail Minus",
-          "Tippity", "Unicode __ Unicorn", "Websocket Wrench"
-        ]},
-        { artist: "Lightning Louise", folder: "lightning-louise", tracks: [
-          "Atlas Node", "Circuit Wraith", "Cypherpunk Lullaby", "Gateway Flow",
-          "Grounded Clouds", "Keysend", "Open Channel",
-          "Signal Path", "The Routing Table", "Voltage Ghost"
-        ]},
-      ];
-      const entries = testArtists.flatMap(g =>
-        g.tracks.map(title => ({ artist: g.artist, filePath: `${base}/${g.folder}/${title}.mp3` }))
-      );
-      const results = await invoke<CatalogTrack[]>("catalog_load_batch", { entries });
-      setTracks(results.map(t => ({
-        title: t.title || "", artist: t.artist || "", album: t.album || "",
-        hash: t.hash, cachePath: t.cachePath, duration: t.durationSecs,
-        format: t.format, artworkDataUrl: t.artworkDataUrl || null,
-        eventId: null, artistPubkey: null, audioUrl: null,
-        lightningNodeId: null, artistDirect: true,
-      })));
-    } catch (e) {
-      console.error("Local catalog fallback also failed:", e);
+    // Dev-only fallback: load from local test-data (only in dev mode, not release builds)
+    if (import.meta.env.DEV) {
+      try {
+        const base = await invoke<string>("get_test_data_dir");
+        const testArtists = [
+          { artist: "Satoshi Sounds", folder: "satoshi-sounds", tracks: [
+            "21M", "Block Zero", "Cathedrals of Code", "Chancellor's On The Brink",
+            "Difficulty Adjustment", "Genesis Clock", "Ledgerly",
+            "Pierre Looked This One Over", "Saw Again From The Pier", "Timechain"
+          ]},
+          { artist: "Keypair", folder: "keypair", tracks: [
+            "dev_null", "Display None", "finite dregs", "Infinite Anticipation",
+            "Lost Protocol", "never dull", "Public _ Private",
+            "Recursive Writing", "Schnorrd", "When Hashes Collide"
+          ]},
+          { artist: "The Relay Operators", folder: "the-relay-operators", tracks: [
+            "1010001__s390v", "Do-again Ants", "Kind 1", "Packet Light",
+            "Propagation", "Protocol Handshake", "Tail Minus",
+            "Tippity", "Unicode __ Unicorn", "Websocket Wrench"
+          ]},
+          { artist: "Lightning Louise", folder: "lightning-louise", tracks: [
+            "Atlas Node", "Circuit Wraith", "Cypherpunk Lullaby", "Gateway Flow",
+            "Grounded Clouds", "Keysend", "Open Channel",
+            "Signal Path", "The Routing Table", "Voltage Ghost"
+          ]},
+        ];
+        const entries = testArtists.flatMap(g =>
+          g.tracks.map(title => ({ artist: g.artist, filePath: `${base}/${g.folder}/${title}.mp3` }))
+        );
+        const results = await invoke<CatalogTrack[]>("catalog_load_batch", { entries });
+        setTracks(results.map(t => ({
+          title: t.title || "", artist: t.artist || "", album: t.album || "",
+          hash: t.hash, cachePath: t.cachePath, duration: t.durationSecs,
+          format: t.format, artworkDataUrl: t.artworkDataUrl || null,
+          eventId: null, artistPubkey: null, audioUrl: null,
+          lightningNodeId: null, artistDirect: true,
+        })));
+      } catch (e) {
+        console.error("Local catalog fallback also failed:", e);
+      }
     }
     setLoading(false);
   }

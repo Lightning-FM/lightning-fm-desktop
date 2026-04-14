@@ -29,13 +29,12 @@ fn get_relays() -> Vec<String> {
         return relays.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     }
 
-    // Check if we're in production mode
-    if std::env::var("LFM_ENV").as_deref() == Ok("production") {
-        return PROD_RELAYS.iter().map(|s| s.to_string()).collect();
+    // Release builds use production relays; debug builds use dev relays
+    if cfg!(debug_assertions) {
+        DEV_RELAYS.iter().map(|s| s.to_string()).collect()
+    } else {
+        PROD_RELAYS.iter().map(|s| s.to_string()).collect()
     }
-
-    // Default: local dev relay
-    DEV_RELAYS.iter().map(|s| s.to_string()).collect()
 }
 
 /// Custom event kind for track metadata
