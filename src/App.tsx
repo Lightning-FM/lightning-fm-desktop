@@ -16,11 +16,6 @@ type View = "library" | "upload" | "discover" | "dashboard" | "settings";
 
 // ─── Types ──────────────────────────────────────────────────
 
-interface LocalLoadResult {
-  hash: string;
-  cache_path: string;
-}
-
 interface CatalogTrack {
   hash: string;
   cachePath: string;
@@ -57,21 +52,6 @@ interface IntervalResult {
   listener_sats: number;
   credits_remaining: number;
   credits_depleted: boolean;
-}
-
-// Metadata from Rust metadata_read command
-interface AudioMetadata {
-  title: string | null;
-  artist: string | null;
-  album: string | null;
-  track_number: number | null;
-  genre: string | null;
-  year: string | null;
-  duration_secs: number;
-  sample_rate: number | null;
-  bit_depth: number | null;
-  format: string;
-  has_artwork: boolean;
 }
 
 // ─── Test catalog (loaded from test-data/) ──────────────────
