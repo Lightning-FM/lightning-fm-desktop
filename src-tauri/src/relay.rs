@@ -89,6 +89,8 @@ pub async fn connect(keys: Option<&Keys>) -> Result<Arc<Client>, String> {
     }
 
     client.connect().await;
+    // Wait for at least one relay to be connected before returning
+    client.wait_for_connection(std::time::Duration::from_secs(5)).await;
     log::info!("Connected to {} relays: {:?}", relays.len(), relays);
 
     Ok(Arc::new(client))
