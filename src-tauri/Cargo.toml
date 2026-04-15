@@ -1,6 +1,6 @@
 [package]
 name = "lightning-fm"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lightning FM — P2P music streaming with Lightning payments and Nostr identity"
 authors = ["Matt Loseke"]
 edition = "2021"

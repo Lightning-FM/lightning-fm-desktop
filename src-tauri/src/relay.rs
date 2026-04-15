@@ -18,6 +18,8 @@ const DEV_RELAYS: &[&str] = &[
 
 const PROD_RELAYS: &[&str] = &[
     "wss://relay.lightning.fm",
+    "wss://nos.lol",
+    "wss://relay.damus.io",
 ];
 
 fn get_relays() -> Vec<String> {
@@ -67,6 +69,8 @@ pub struct TrackInfo {
     pub preview_secs: Option<u64>,
     /// Artist's Lightning node_id for keysend payments (33-byte compressed, hex)
     pub lightning_node_id: Option<String>,
+    /// Artwork URL from the "image" tag (e.g., Blossom CDN)
+    pub image_url: Option<String>,
     pub created_at: u64,
 }
 
@@ -123,13 +127,24 @@ pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::coll
         .await
         .map_err(|e| format!("Failed to fetch tracks: {}", e))?;
 
-    let tracks: Vec<TrackInfo> = track_events
+    let all_tracks: Vec<TrackInfo> = track_events
         .iter()
         .filter_map(|event| parse_track_event(event))
         .filter(|t| t.audio_url.is_some() && t.audio_hash.is_some()) // only playable tracks
         .collect();
 
-    log::info!("Fetched {} playable tracks from relays", tracks.len());
+    // Deduplicate by slug (d-tag), keeping the most recent event per slug
+    let mut by_slug: std::collections::HashMap<String, TrackInfo> = std::collections::HashMap::new();
+    for track in all_tracks {
+        let slug = track.slug.clone();
+        match by_slug.get(&slug) {
+            Some(existing) if existing.created_at >= track.created_at => {} // keep existing
+            _ => { by_slug.insert(slug, track); }
+        }
+    }
+    let tracks: Vec<TrackInfo> = by_slug.into_values().collect();
+
+    log::info!("Fetched {} playable tracks from relays ({} after dedup)", track_events.len(), tracks.len());
 
     // Step 2: collect unique pubkeys, batch fetch kind 0 profiles
     let pubkeys: Vec<PublicKey> = tracks
@@ -173,6 +188,121 @@ pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::coll
             log::info!("Profile: {} → {}", &hex[..12], profile.display_name.as_deref().unwrap_or("(no name)"));
         }
 
+        // Step 3: NIP-65 relay discovery for missing profiles
+        // Find artist pubkeys that we didn't get a kind 0 for
+        let all_artist_hexes: std::collections::HashSet<String> = tracks
+            .iter()
+            .map(|t| t.artist_pubkey.clone())
+            .collect();
+        let missing_hexes: Vec<String> = all_artist_hexes
+            .iter()
+            .filter(|hex| !latest.contains_key(*hex))
+            .cloned()
+            .collect();
+
+        if !missing_hexes.is_empty() {
+            log::info!("Missing profiles for {} artists, trying NIP-65 relay discovery...", missing_hexes.len());
+
+            let missing_pubkeys: Vec<PublicKey> = missing_hexes
+                .iter()
+                .filter_map(|hex| PublicKey::parse(hex).ok())
+                .collect();
+
+            // Fetch kind 10002 relay list events for missing artists
+            let relay_list_filter = Filter::new()
+                .kind(Kind::RelayList)
+                .authors(missing_pubkeys.clone());
+
+            if let Ok(relay_list_events) = client
+                .fetch_events(relay_list_filter, std::time::Duration::from_secs(3))
+                .await
+            {
+                // Collect unique relay URLs from the r tags, deduped by pubkey (keep latest)
+                let mut discovered_relays: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let mut relay_list_ts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+                let mut pubkey_relays: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+
+                for event in relay_list_events.iter() {
+                    let hex = event.pubkey.to_hex();
+                    let ts = event.created_at.as_u64();
+                    if ts <= *relay_list_ts.get(&hex).unwrap_or(&0) {
+                        continue; // skip older relay list for this pubkey
+                    }
+                    relay_list_ts.insert(hex.clone(), ts);
+
+                    // NIP-65: for profile fetching, use write relays (or unmarked = both)
+                    // Skip relays explicitly marked "read" — profiles are published to write relays
+                    let relays_for_pubkey: Vec<String> = event.tags.iter()
+                        .filter_map(|tag| {
+                            let values = tag.as_slice();
+                            if values.len() >= 2 && values[0] == "r" {
+                                let marker = values.get(2).map(|s| s.as_str());
+                                if marker.is_none() || marker == Some("write") {
+                                    Some(values[1].to_string())
+                                } else {
+                                    None // skip read-only relays
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .take(10) // cap per pubkey to prevent abuse
+                        .collect();
+
+                    for url in &relays_for_pubkey {
+                        discovered_relays.insert(url.clone());
+                    }
+                    pubkey_relays.insert(hex, relays_for_pubkey);
+                }
+
+                // Filter out relays we're already connected to
+                let current_relays: std::collections::HashSet<String> = get_relays().into_iter().collect();
+                let new_relays: Vec<String> = discovered_relays
+                    .into_iter()
+                    .filter(|url| !current_relays.contains(url))
+                    .filter(|url| url.starts_with("wss://") || url.starts_with("ws://"))
+                    .collect();
+
+                if !new_relays.is_empty() {
+                    log::info!("Discovered {} new relays via NIP-65, fetching missing profiles...", new_relays.len());
+
+                    // Create a temporary client to query discovered relays
+                    let tmp_client = Client::default();
+                    for url in &new_relays {
+                        if let Err(e) = tmp_client.add_relay(url.as_str()).await {
+                            log::warn!("Failed to add discovered relay {}: {}", url, e);
+                        }
+                    }
+                    tmp_client.connect().await;
+
+                    let discovery_filter = Filter::new()
+                        .kind(Kind::Metadata)
+                        .authors(missing_pubkeys);
+
+                    if let Ok(discovered_profiles) = tmp_client
+                        .fetch_events(discovery_filter, std::time::Duration::from_secs(3))
+                        .await
+                    {
+                        for event in discovered_profiles.iter() {
+                            let hex = event.pubkey.to_hex();
+                            let ts = event.created_at.as_u64();
+                            if ts > *latest_ts.get(&hex).unwrap_or(&0) {
+                                latest_ts.insert(hex.clone(), ts);
+                                latest.insert(hex.clone(), parse_profile_content(&event.content));
+                                log::info!("NIP-65 resolved: {} → {}",
+                                    &hex[..12],
+                                    parse_profile_content(&event.content).display_name.as_deref().unwrap_or("(no name)")
+                                );
+                            }
+                        }
+                    }
+
+                    // Disconnect temporary client
+                    tmp_client.disconnect().await;
+                }
+            }
+        }
+
         latest
     } else {
         std::collections::HashMap::new()
@@ -195,6 +325,7 @@ pub async fn publish_track(
     file_size: u64,
     preview_secs: Option<u64>,
     lightning_node_id: Option<&str>,
+    image_url: Option<&str>,
 ) -> Result<String, String> {
     let mut tags = vec![
         Tag::custom(TagKind::custom("d"), vec![slug.to_string()]),
@@ -206,7 +337,6 @@ pub async fn publish_track(
     ];
 
     if let Some(fallback) = fallback_url {
-        Tag::custom(TagKind::custom("fallback"), vec![fallback.to_string()]);
         tags.push(Tag::custom(TagKind::custom("fallback"), vec![fallback.to_string()]));
     }
 
@@ -220,6 +350,10 @@ pub async fn publish_track(
 
     if let Some(node_id) = lightning_node_id {
         tags.push(Tag::custom(TagKind::custom("lightning_node_id"), vec![node_id.to_string()]));
+    }
+
+    if let Some(image) = image_url {
+        tags.push(Tag::custom(TagKind::custom("image"), vec![image.to_string()]));
     }
 
     let builder = EventBuilder::new(Kind::Custom(KIND_TRACK), "")
@@ -434,6 +568,7 @@ fn parse_track_event(event: &Event) -> Option<TrackInfo> {
         file_size: get_tag("size").and_then(|s| s.parse().ok()),
         preview_secs: get_tag("preview").and_then(|p| p.parse().ok()),
         lightning_node_id: get_tag("lightning_node_id"),
+        image_url: get_tag("image"),
         created_at: event.created_at.as_u64(),
     })
 }
@@ -570,7 +705,7 @@ mod tests {
     #[test]
     fn relay_list_tags_correct_structure() {
         let tags = build_relay_list_tags(PROD_RELAYS);
-        assert_eq!(tags.len(), 4);
+        assert_eq!(tags.len(), PROD_RELAYS.len());
         for tag in &tags {
             let values = tag.as_slice();
             assert_eq!(values[0], "r");

@@ -1,7 +1,7 @@
 // Library view — browsable catalog with track list and artist grid modes
 // Data-agnostic: works with test catalog or relay-fetched tracks.
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type {
   LibraryTrack,
   ArtistGroup,
@@ -19,6 +19,7 @@ interface LibraryViewProps {
   activeTrackHash: string | null;
   isPlaying: boolean;
   onPlay: (track: LibraryTrack) => void;
+  onQueueChange?: (visibleTracks: LibraryTrack[]) => void;
 }
 
 export function LibraryView({
@@ -27,6 +28,7 @@ export function LibraryView({
   activeTrackHash,
   isPlaying,
   onPlay,
+  onQueueChange,
 }: LibraryViewProps) {
   const [viewMode, setViewMode] = useState<LibraryViewType>("tracks");
   const [sortField, setSortField] = useState<SortField>("artist");
@@ -100,6 +102,14 @@ export function LibraryView({
       a.name.localeCompare(b.name)
     );
   }, [filtered]);
+
+  // Report visible track list to parent for player bar next/prev
+  useEffect(() => {
+    if (onQueueChange) {
+      const visibleTracks = selectedArtist ? selectedArtist.tracks : sorted;
+      onQueueChange(visibleTracks);
+    }
+  }, [sorted, selectedArtist, onQueueChange]);
 
   function toggleSort(field: SortField) {
     if (sortField === field) {

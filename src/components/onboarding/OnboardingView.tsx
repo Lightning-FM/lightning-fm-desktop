@@ -37,7 +37,9 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
     setError("");
 
     try {
-      const identity = await invoke<IdentityInfo>("identity_create");
+      const identity = await invoke<IdentityInfo>("identity_create", {
+        displayName: displayName.trim(),
+      });
       setCreatedIdentity(identity);
 
       // Export nsec for backup step
@@ -73,8 +75,19 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
     }
   }
 
-  function handleBackupComplete() {
+  async function handleBackupComplete() {
     if (createdIdentity) {
+      // Publish display name to Nostr profile if relays are connected.
+      // Non-blocking: onboarding completes even if relay publish fails.
+      if (createdIdentity.display_name) {
+        try {
+          await invoke("profile_set", {
+            displayName: createdIdentity.display_name,
+          });
+        } catch (e) {
+          console.warn("Could not publish profile during onboarding:", e);
+        }
+      }
       onComplete(createdIdentity);
     }
   }

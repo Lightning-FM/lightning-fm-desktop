@@ -152,14 +152,14 @@ pub fn identity_check(state: State<IdentityState>) -> Result<Option<IdentityInfo
 }
 
 #[tauri::command]
-pub fn identity_create(state: State<IdentityState>) -> Result<IdentityInfo, String> {
+pub fn identity_create(display_name: Option<String>, state: State<IdentityState>) -> Result<IdentityInfo, String> {
     let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
 
     if keys_lock.is_some() {
         return Err("Identity already exists. Delete first to create a new one.".to_string());
     }
 
-    let (keys, info) = crate::identity::create_identity()?;
+    let (keys, info) = crate::identity::create_identity_with_name(display_name)?;
     *keys_lock = Some(keys);
     Ok(info)
 }
@@ -248,6 +248,7 @@ pub struct CatalogItem {
     pub file_size: Option<u64>,
     pub preview_secs: Option<u64>,
     pub lightning_node_id: Option<String>,
+    pub image_url: Option<String>,
     pub created_at: u64,
 }
 
@@ -297,6 +298,7 @@ pub async fn load_catalog(
             file_size: t.file_size,
             preview_secs: t.preview_secs,
             lightning_node_id: t.lightning_node_id,
+            image_url: t.image_url,
             created_at: t.created_at,
         }
     }).collect();
@@ -404,6 +406,7 @@ pub async fn upload_track(
         upload.size,
         preview_secs,
         lightning_node_id.as_deref(),
+        None, // image_url — not yet supported in upload flow
     ).await?;
 
     Ok(TrackInfo {
@@ -420,6 +423,7 @@ pub async fn upload_track(
         file_size: Some(upload.size),
         preview_secs,
         lightning_node_id,
+        image_url: None,
         created_at: nostr_sdk::Timestamp::now().as_u64(),
     })
 }
@@ -699,13 +703,14 @@ pub async fn playback_start(
     let (path, artist_direct) = crate::playback::fetch_and_cache(&hash, urls).await?;
 
     // Determine playback mode based on funding
-    let can_stream = crate::credits::can_stream(&credits_state);
+    let can_stream = crate::credits::can_stream(&credits_state)?;
 
     if can_stream {
         // Activate credits on first play
-        crate::credits::activate_credits(&credits_state);
+        crate::credits::activate_credits(&credits_state)?;
 
-        let remaining = *credits_state.credits_remaining.lock().unwrap();
+        let remaining = *credits_state.credits_remaining.lock()
+            .map_err(|e| format!("Failed to lock credits_remaining: {e}"))?;
 
         Ok(PlaybackStartResult {
             cache_path: path,
@@ -729,18 +734,18 @@ pub async fn playback_start(
 
 /// Get current credits info
 #[tauri::command]
-pub fn credits_info(state: State<CreditsState>) -> CreditsInfo {
+pub fn credits_info(state: State<CreditsState>) -> Result<CreditsInfo, String> {
     crate::credits::get_credits_info(&state)
 }
 
 /// Deduct credits (called by the streaming payment loop each interval)
 #[tauri::command]
 pub fn credits_deduct(amount: u64, state: State<CreditsState>) -> Result<CreditsInfo, String> {
-    let success = crate::credits::deduct_credits(&state, amount);
+    let success = crate::credits::deduct_credits(&state, amount)?;
     if !success {
         return Err("Insufficient credits".to_string());
     }
-    Ok(crate::credits::get_credits_info(&state))
+    crate::credits::get_credits_info(&state)
 }
 
 // ─── Streaming Payment Commands ─────────────────────────────
@@ -802,7 +807,7 @@ pub fn stream_tick(
     let listener_cost = crate::streaming::listener_cost_per_interval();
 
     // Deduct from credits (or wallet later)
-    let success = crate::credits::deduct_credits(&credits_state, listener_cost);
+    let success = crate::credits::deduct_credits(&credits_state, listener_cost)?;
     let credits_depleted = !success;
 
     if success {
@@ -862,7 +867,8 @@ pub fn stream_tick(
         );
     }
 
-    let credits_remaining = *credits_state.credits_remaining.lock().unwrap();
+    let credits_remaining = *credits_state.credits_remaining.lock()
+        .map_err(|e| format!("Failed to lock credits_remaining: {e}"))?;
 
     Ok(IntervalResult {
         session: session.clone(),
@@ -1029,7 +1035,8 @@ pub fn withdraw_onchain(
 
     let addr: ldk_node::bitcoin::Address<ldk_node::bitcoin::address::NetworkUnchecked> = address.parse()
         .map_err(|e| format!("Invalid Bitcoin address: {:?}", e))?;
-    let addr = addr.assume_checked();
+    let addr = addr.require_network(ldk_node::bitcoin::Network::Signet)
+        .map_err(|e| format!("Address is not valid for signet: {:?}", e))?;
 
     let txid = if let Some(sats) = amount_sats {
         node.onchain_payment().send_to_address(&addr, sats, None)

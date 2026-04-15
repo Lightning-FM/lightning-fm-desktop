@@ -20,11 +20,11 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' asset: https://media.lightning.fm https://*.blossom.band blob: data:; connect-src ipc: http://ipc.localhost; media-src 'self' asset: https://media.lightning.fm https://*.blossom.band data:",
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["**"],
+          "allow": ["$HOME/.lightning-fm/**", "$APPDATA/**", "$RESOURCE/**"],
           "deny": []
         }
       }
@@ -41,7 +41,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "Developer ID Application: Matthew Loseke (9MA7EHBZXE)"
+      "signingIdentity": "Developer ID Application: Matthew Loseke (9MA7EHBZXE)",
+      "entitlements": "Entitlements.plist"
     }
   }
 }

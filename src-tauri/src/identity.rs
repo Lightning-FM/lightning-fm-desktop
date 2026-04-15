@@ -35,12 +35,19 @@ pub struct IdentityInfo {
 /// Generate a new Nostr keypair and store the nsec in OS keychain.
 /// This is the "new user" path — they've never used Nostr before.
 pub fn create_identity() -> Result<(Keys, IdentityInfo), String> {
+    create_identity_with_name(None)
+}
+
+/// Generate a new Nostr keypair with an optional display name.
+/// The display name is included in the returned IdentityInfo so the frontend
+/// can use it immediately and publish it to relays once connected.
+pub fn create_identity_with_name(display_name: Option<String>) -> Result<(Keys, IdentityInfo), String> {
     let keys = Keys::generate();
 
     // Store nsec in OS keychain
     store_nsec_in_keychain(&keys)?;
 
-    let info = identity_info_from_keys(&keys, None);
+    let info = identity_info_from_keys(&keys, display_name);
     Ok((keys, info))
 }
 
