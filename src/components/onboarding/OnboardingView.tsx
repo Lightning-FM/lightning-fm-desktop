@@ -15,9 +15,10 @@ type OnboardingStep = "choice" | "create" | "import" | "backup";
 
 interface OnboardingViewProps {
   onComplete: (identity: IdentityInfo) => void;
+  onCancel?: () => void;
 }
 
-export function OnboardingView({ onComplete }: OnboardingViewProps) {
+export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
   const [step, setStep] = useState<OnboardingStep>("choice");
   const [displayName, setDisplayName] = useState("");
   const [nsecInput, setNsecInput] = useState("");
@@ -128,6 +129,15 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
                 Have an nsec? Paste it here.
               </div>
             </button>
+
+            {onCancel && (
+              <button
+                className="h-8 px-4 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider text-[11px] hover:text-foreground transition-all"
+                onClick={onCancel}
+              >
+                Back to Library
+              </button>
+            )}
           </div>
         )}
 

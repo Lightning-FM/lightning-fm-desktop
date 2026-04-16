@@ -151,7 +151,7 @@ function App() {
 
   // Show onboarding if user explicitly navigates to it
   if (view === "settings" && !identity) {
-    return <OnboardingView onComplete={(id) => { setIdentity(id); setView("library"); }} />;
+    return <OnboardingView onComplete={(id) => { setIdentity(id); setView("library"); }} onCancel={() => setView("library")} />;
   }
 
   return (

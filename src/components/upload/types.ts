@@ -56,6 +56,8 @@ export interface UploadTrack {
   sha256: string | null;
   audioUrl: string | null;
   eventId: string | null;
+  artistNpub: string | null;
+  relayPublished: boolean;
 }
 
 export interface UploadState {
@@ -81,4 +83,5 @@ export type UploadAction =
   | { type: "SET_ALBUM_NAME"; name: string }
   | { type: "SET_DRAGGING"; isDragging: boolean }
   | { type: "SET_STAGE"; id: string; stage: UploadStage; progress?: number; error?: string }
-  | { type: "MARK_PUBLISHED"; id: string; sha256: string; audioUrl: string; eventId: string };
+  | { type: "MARK_PUBLISHED"; id: string; sha256: string; audioUrl: string; eventId: string; artistNpub: string }
+  | { type: "CLEAR_PUBLISHED" };

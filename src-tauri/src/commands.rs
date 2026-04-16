@@ -859,7 +859,18 @@ pub fn stream_tick(
                     }
                 }
             } else {
-                log::warn!("LDK node not running — skipping keysend for track {}", session.track_id);
+                // LDK node not running — refund credits since no payment was sent
+                if let Err(refund_err) = crate::credits::refund_credits(&credits_state, listener_cost) {
+                    log::error!(
+                        "CRITICAL: LDK node not running and failed to refund {} sats: {}. Track: {}",
+                        listener_cost, refund_err, session.track_id,
+                    );
+                } else {
+                    log::warn!(
+                        "LDK node not running — {} sats refunded. Track: {}",
+                        listener_cost, session.track_id,
+                    );
+                }
             }
         } else {
             log::info!(

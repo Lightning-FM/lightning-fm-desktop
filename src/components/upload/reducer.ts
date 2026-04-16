@@ -124,9 +124,17 @@ export function uploadReducer(state: UploadState, action: UploadAction): UploadS
                 sha256: action.sha256,
                 audioUrl: action.audioUrl,
                 eventId: action.eventId,
+                artistNpub: action.artistNpub,
+                relayPublished: true,
               }
             : t
         ),
+      };
+
+    case "CLEAR_PUBLISHED":
+      return {
+        ...state,
+        tracks: state.tracks.filter((t) => t.stage !== "live"),
       };
 
     default:

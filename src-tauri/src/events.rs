@@ -41,7 +41,7 @@ pub fn spawn_event_loop(
             // Race: next event vs shutdown signal
             tokio::select! {
                 event = node.next_event_async() => {
-                    let payload = map_event(&event);
+                    let payload = map_event(&event, &node);
                     log::info!("LDK event: {}", payload.event_type);
 
                     // Emit to all frontend windows
@@ -69,7 +69,7 @@ pub fn spawn_event_loop(
 }
 
 /// Map an ldk_node::Event into a frontend-friendly payload
-fn map_event(event: &ldk_node::Event) -> LdkEventPayload {
+fn map_event(event: &ldk_node::Event, node: &Node) -> LdkEventPayload {
     match event {
         ldk_node::Event::PaymentReceived {
             payment_id,
@@ -92,16 +92,24 @@ fn map_event(event: &ldk_node::Event) -> LdkEventPayload {
             payment_hash,
             payment_preimage: _,
             fee_paid_msat,
-        } => LdkEventPayload {
-            event_type: "payment_successful".to_string(),
-            payment_hash: Some(format!("{}", payment_hash)),
-            payment_id: payment_id.map(|id| format!("{}", id)),
-            amount_msat: None,
-            fee_paid_msat: *fee_paid_msat,
-            channel_id: None,
-            counterparty_node_id: None,
-            close_reason: None,
-        },
+        } => {
+            // Look up the payment amount from the node's payment store
+            // since PaymentSuccessful doesn't include it directly
+            let amount_msat = payment_id
+                .and_then(|id| node.payment(&id))
+                .and_then(|details| details.amount_msat);
+
+            LdkEventPayload {
+                event_type: "payment_successful".to_string(),
+                payment_hash: Some(format!("{}", payment_hash)),
+                payment_id: payment_id.map(|id| format!("{}", id)),
+                amount_msat,
+                fee_paid_msat: *fee_paid_msat,
+                channel_id: None,
+                counterparty_node_id: None,
+                close_reason: None,
+            }
+        }
 
         ldk_node::Event::PaymentFailed {
             payment_id,

@@ -37,6 +37,8 @@ function makeTrack(overrides: Partial<UploadTrack> = {}): UploadTrack {
     sha256: null,
     audioUrl: null,
     eventId: null,
+    artistNpub: null,
+    relayPublished: false,
     ...overrides,
   };
 }
@@ -318,6 +320,7 @@ describe("MARK_PUBLISHED", () => {
       sha256: "abc123",
       audioUrl: "https://media.lightning.fm/abc123",
       eventId: "event-xyz",
+      artistNpub: "npub1test",
     });
 
     expect(state.tracks[0].stage).toBe("live");
@@ -325,6 +328,28 @@ describe("MARK_PUBLISHED", () => {
     expect(state.tracks[0].sha256).toBe("abc123");
     expect(state.tracks[0].audioUrl).toBe("https://media.lightning.fm/abc123");
     expect(state.tracks[0].eventId).toBe("event-xyz");
+    expect(state.tracks[0].artistNpub).toBe("npub1test");
+    expect(state.tracks[0].relayPublished).toBe(true);
+  });
+});
+
+// ─── CLEAR_PUBLISHED ──────────────────────────────────────────
+
+describe("CLEAR_PUBLISHED", () => {
+  it("removes all live tracks", () => {
+    const initial: UploadState = {
+      ...initialUploadState,
+      tracks: [
+        makeTrack({ id: "t1", stage: "live" }),
+        makeTrack({ id: "t2", stage: "draft" }),
+        makeTrack({ id: "t3", stage: "live" }),
+      ],
+      selectedTrackIds: ["t1"],
+    };
+    const state = uploadReducer(initial, { type: "CLEAR_PUBLISHED" });
+
+    expect(state.tracks).toHaveLength(1);
+    expect(state.tracks[0].id).toBe("t2");
   });
 });
 

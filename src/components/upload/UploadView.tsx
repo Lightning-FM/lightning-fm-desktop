@@ -1,7 +1,7 @@
 // Upload view — orchestrates the 3-pane upload experience
 // Drop zone (initial) → Track list | Detail | Preview (after files added)
 
-import { useReducer, useCallback, useEffect } from "react";
+import { useReducer, useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { UploadTrack } from "./types";
 import { uploadReducer, initialUploadState } from "./reducer";
@@ -9,14 +9,34 @@ import { DropZone } from "./DropZone";
 import { TrackList } from "./TrackList";
 import { TrackDetail } from "./TrackDetail";
 import { PreviewPane } from "./PreviewPane";
+import { IdentityGate } from "./IdentityGate";
+import { PublishConfirmation } from "./PublishConfirmation";
 
-// Result from upload_track Tauri command
+// Result from upload_track Tauri command — matches Rust TrackInfo struct
 interface TrackInfo {
   event_id: string;
+  artist_pubkey: string;
+  artist_npub: string;
   title: string;
   slug: string;
-  audio_url: string;
-  sha256: string;
+  duration_secs: number | null;
+  audio_hash: string | null;
+  audio_url: string | null;
+  fallback_url: string | null;
+  mime_type: string | null;
+  file_size: number | null;
+  preview_secs: number | null;
+  lightning_node_id: string | null;
+  image_url: string | null;
+  created_at: number;
+}
+
+// Result from identity_check Tauri command
+interface IdentityInfo {
+  npub: string;
+  pubkey_hex: string;
+  has_nsec: boolean;
+  display_name: string | null;
 }
 
 let nextId = 1;
@@ -48,32 +68,42 @@ function extensionToFormat(ext: string): string {
 
 export function UploadView() {
   const [state, dispatch] = useReducer(uploadReducer, initialUploadState);
+  const [identity, setIdentity] = useState<IdentityInfo | null | undefined>(undefined);
+  const [showIdentityGate, setShowIdentityGate] = useState(false);
+  const [publishingInProgress, setPublishingInProgress] = useState(false);
 
   const selectedTrack = state.tracks.find((t) =>
     state.selectedTrackIds.includes(t.id)
   );
 
+  // Check identity on mount
+  useEffect(() => {
+    checkIdentity();
+  }, []);
+
+  async function checkIdentity() {
+    try {
+      const info = await invoke<IdentityInfo | null>("identity_check");
+      setIdentity(info);
+    } catch {
+      setIdentity(null);
+    }
+  }
+
   // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // ⌘+S — save draft
+      // cmd+S -- save draft
       if (e.metaKey && e.key === "s") {
         e.preventDefault();
         // TODO: persist draft state to disk
       }
-      // ⌘+Enter — publish
+      // cmd+Enter -- publish
       if (e.metaKey && e.key === "Enter") {
         e.preventDefault();
         handlePublish();
       }
-      // ⌘+E — batch edit (when multiple selected)
-      if (e.metaKey && e.key === "e") {
-        e.preventDefault();
-        if (state.selectedTrackIds.length > 1) {
-          // TODO: open batch edit modal
-        }
-      }
-      // ⌘+A — select all (when in upload view)
+      // cmd+A -- select all (when in upload view)
       if (e.metaKey && e.key === "a" && state.tracks.length > 0) {
         e.preventDefault();
         dispatch({ type: "SELECT_ALL" });
@@ -110,7 +140,7 @@ export function UploadView() {
       return {
         id: genId(),
         // webkitRelativePath gives the full path for folder drops
-        filePath: (file as any).path || file.name,
+        filePath: (file as File & { path?: string }).path || file.name,
         fileName: file.name,
 
         // Defaults — will be overwritten by ID3 tag reading
@@ -127,7 +157,7 @@ export function UploadView() {
         isExplicit: false,
         isrc: "",
 
-        // Audio info from File API (approximate — Rust will give exact values)
+        // Audio info from File API (approximate -- Rust will give exact values)
         duration: 0,
         format: extensionToFormat(ext),
         bitDepth: null,
@@ -151,6 +181,8 @@ export function UploadView() {
         sha256: null,
         audioUrl: null,
         eventId: null,
+        artistNpub: null,
+        relayPublished: false,
       };
     });
 
@@ -219,8 +251,6 @@ export function UploadView() {
             embeddedArtwork: true,
           },
         });
-        // Use first track's artwork as album artwork if none set
-        // (checked inside dispatch won't work, so we set it directly)
         dispatch({
           type: "SET_ALBUM_ARTWORK",
           path: null,
@@ -259,7 +289,7 @@ export function UploadView() {
         const dataUrl = reader.result as string;
         dispatch({
           type: "SET_ALBUM_ARTWORK",
-          path: (file as any).path || file.name,
+          path: (file as File & { path?: string }).path || file.name,
           dataUrl,
         });
       };
@@ -270,10 +300,18 @@ export function UploadView() {
 
   // Publish all draft tracks
   async function handlePublish() {
+    // Check identity first -- required for Blossom auth + Nostr signing
+    if (!identity) {
+      setShowIdentityGate(true);
+      return;
+    }
+
     const drafts = state.tracks.filter(
       (t) => t.stage === "draft" || t.stage === "error"
     );
     if (drafts.length === 0) return;
+
+    setPublishingInProgress(true);
 
     for (const track of drafts) {
       // Validate required fields
@@ -288,7 +326,7 @@ export function UploadView() {
       }
 
       try {
-        // Stage 0: Write metadata back to file before hashing
+        // Stage: processing -- writing metadata back to file before hashing
         dispatch({
           type: "SET_STAGE",
           id: track.id,
@@ -307,35 +345,15 @@ export function UploadView() {
           lyrics: track.lyrics || null,
         });
 
-        // Stage 1: Uploading
+        // Stage: uploading -- Blossom upload + Nostr event publish
         dispatch({
           type: "SET_STAGE",
           id: track.id,
           stage: "uploading",
-          progress: 0,
+          progress: 10,
         });
 
-        // Simulate progress ticks (actual progress will come from Tauri events)
-        const progressInterval = setInterval(() => {
-          dispatch({
-            type: "SET_STAGE",
-            id: track.id,
-            stage: "uploading",
-            progress: Math.min(
-              90,
-              (state.tracks.find((t) => t.id === track.id)?.progress ?? 0) + 15
-            ),
-          });
-        }, 500);
-
-        // Stage 2-4 happen inside upload_track
-        dispatch({
-          type: "SET_STAGE",
-          id: track.id,
-          stage: "uploading",
-          progress: 50,
-        });
-
+        // upload_track handles: Blossom upload, kind 31337 event creation, relay publish
         const result = await invoke<TrackInfo>("upload_track", {
           filePath: track.filePath,
           title: track.title,
@@ -343,15 +361,22 @@ export function UploadView() {
           durationSecs: track.duration > 0 ? Math.round(track.duration) : undefined,
         });
 
-        clearInterval(progressInterval);
+        // Stage: publishing -- event was signed and sent to relays
+        dispatch({
+          type: "SET_STAGE",
+          id: track.id,
+          stage: "publishing",
+          progress: 90,
+        });
 
-        // Stage 5: Live
+        // Mark as live with all result data
         dispatch({
           type: "MARK_PUBLISHED",
           id: track.id,
-          sha256: result.sha256,
-          audioUrl: result.audio_url,
+          sha256: result.audio_hash || "",
+          audioUrl: result.audio_url || "",
           eventId: result.event_id,
+          artistNpub: result.artist_npub,
         });
       } catch (err) {
         dispatch({
@@ -362,6 +387,14 @@ export function UploadView() {
         });
       }
     }
+
+    setPublishingInProgress(false);
+  }
+
+  // Handle identity created/imported from the gate
+  function handleIdentityReady(info: IdentityInfo) {
+    setIdentity(info);
+    setShowIdentityGate(false);
   }
 
   // Count by stage for the footer
@@ -382,6 +415,29 @@ export function UploadView() {
   const live = stageCounts["live"] || 0;
   const errors = stageCounts["error"] || 0;
 
+  // All tracks published -- show confirmation
+  const allPublished = state.tracks.length > 0 && state.tracks.every((t) => t.stage === "live");
+
+  // Identity gate overlay
+  if (showIdentityGate) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="shrink-0 h-8 flex items-center px-4 border-b border-border">
+          <span className="font-label-mono text-amber uppercase tracking-wider">
+            Upload
+          </span>
+          <span className="font-small text-muted-foreground ml-4">
+            Identity required
+          </span>
+        </div>
+        <IdentityGate
+          onIdentityReady={handleIdentityReady}
+          onCancel={() => setShowIdentityGate(false)}
+        />
+      </div>
+    );
+  }
+
   // Show drop zone if no tracks yet
   if (state.tracks.length === 0) {
     return (
@@ -392,7 +448,7 @@ export function UploadView() {
             Upload
           </span>
           <span className="font-small text-muted-foreground ml-4">
-            <span className="border border-border px-1">⌘U</span>
+            <span className="border border-border px-1">cmd+U</span>
           </span>
         </div>
 
@@ -403,6 +459,27 @@ export function UploadView() {
             dispatch({ type: "SET_DRAGGING", isDragging: false })
           }
           onFilesSelected={handleFilesSelected}
+        />
+      </div>
+    );
+  }
+
+  // Post-publish confirmation view
+  if (allPublished) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="shrink-0 h-8 flex items-center px-4 border-b border-border">
+          <span className="font-label-mono text-amber uppercase tracking-wider">
+            Upload
+          </span>
+          <span className="font-small text-[var(--success)] ml-4">
+            All tracks published
+          </span>
+        </div>
+
+        <PublishConfirmation
+          tracks={state.tracks}
+          onUploadMore={() => dispatch({ type: "CLEAR_PUBLISHED" })}
         />
       </div>
     );
@@ -424,6 +501,12 @@ export function UploadView() {
           )}
           {state.tracks.length} track{state.tracks.length !== 1 ? "s" : ""}
         </span>
+        {/* Identity indicator */}
+        {identity && (
+          <span className="font-small text-muted-foreground ml-auto tabular-nums">
+            {identity.display_name || identity.npub.slice(0, 16) + "..."}
+          </span>
+        )}
       </div>
 
       {/* 3-pane content */}
@@ -482,7 +565,7 @@ export function UploadView() {
         </div>
       </div>
 
-      {/* Footer — status bar + actions */}
+      {/* Footer -- status bar + actions */}
       <div className="shrink-0 h-10 flex items-center px-4 border-t border-border gap-4">
         {/* Status summary */}
         <span className="font-small text-secondary-foreground">
@@ -511,12 +594,21 @@ export function UploadView() {
 
         <div className="flex-1" />
 
+        {/* Identity status */}
+        {!identity && (
+          <button
+            className="h-7 px-3 border border-warning text-warning font-label-mono uppercase tracking-wider hover:bg-warning/10 transition-all text-[11px]"
+            onClick={() => setShowIdentityGate(true)}
+          >
+            No Identity
+          </button>
+        )}
+
         {/* Add more files */}
         <button
           className="h-7 px-3 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider hover:border-[var(--text-muted)] hover:text-foreground transition-all text-[11px]"
+          disabled={publishingInProgress}
           onClick={() => {
-            // Reset to show drop zone overlay
-            // For now, trigger file input
             const input = document.createElement("input");
             input.type = "file";
             input.multiple = true;
@@ -531,23 +623,21 @@ export function UploadView() {
           + Add Files
         </button>
 
-        {/* Save draft */}
-        <button
-          className="h-7 px-3 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider hover:border-[var(--text-muted)] hover:text-foreground transition-all text-[11px]"
-          onClick={() => {
-            // TODO: persist state to disk
-          }}
-        >
-          Save Draft
-        </button>
-
         {/* Publish */}
         <button
-          className="h-7 px-4 border border-amber text-amber font-label-mono uppercase tracking-wider hover:bg-amber/10 transition-all text-[11px]"
+          className={`h-7 px-4 border font-label-mono uppercase tracking-wider transition-all text-[11px] ${
+            publishingInProgress
+              ? "border-amber/40 text-amber/40 cursor-wait"
+              : drafts === 0
+              ? "border-border text-muted-foreground cursor-not-allowed"
+              : "border-amber text-amber hover:bg-amber/10"
+          }`}
           onClick={handlePublish}
-          disabled={drafts === 0}
+          disabled={drafts === 0 || publishingInProgress}
         >
-          Publish{drafts > 0 ? ` (${drafts})` : ""}
+          {publishingInProgress
+            ? "Publishing..."
+            : `Publish${drafts > 0 ? ` (${drafts})` : ""}`}
         </button>
       </div>
     </div>
