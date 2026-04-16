@@ -20,7 +20,7 @@ use credits::CreditsState;
 use streaming::StreamingState;
 use commands::{
     // LDK node
-    ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address,
+    ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address, ldk_get_mnemonic,
     // Nostr identity
     identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
     // Relay & browse
@@ -31,8 +31,8 @@ use commands::{
     upload_track,
     // Metadata & waveform
     metadata_read, metadata_write, artwork_extract, waveform_generate,
-    // Withdrawals
-    withdraw_lightning, withdraw_onchain,
+    // Withdrawals & invoices
+    withdraw_lightning, withdraw_onchain, ldk_create_invoice,
     // Playback
     playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
     catalog_load_batch, get_test_data_dir,
@@ -53,7 +53,7 @@ pub fn run() {
         .manage(StreamingState::new())
         .invoke_handler(tauri::generate_handler![
             // LDK node
-            ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address,
+            ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address, ldk_get_mnemonic,
             // Nostr identity
             identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
             // Relay & browse
@@ -64,8 +64,8 @@ pub fn run() {
             upload_track,
             // Metadata & waveform
             metadata_read, metadata_write, artwork_extract, waveform_generate,
-            // Withdrawals
-            withdraw_lightning, withdraw_onchain,
+            // Withdrawals & invoices
+            withdraw_lightning, withdraw_onchain, ldk_create_invoice,
             // Playback
             playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
             catalog_load_batch, get_test_data_dir,

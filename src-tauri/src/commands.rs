@@ -127,6 +127,17 @@ pub fn ldk_new_address(state: State<LdkState>) -> Result<String, String> {
     }
 }
 
+/// Returns the BIP39 mnemonic backup phrase from the Keychain.
+/// SENSITIVE — the frontend should only display this behind a confirmation gate.
+#[tauri::command]
+pub fn ldk_get_mnemonic() -> Result<Vec<String>, String> {
+    let mnemonic = crate::node::load_mnemonic_from_keychain()?;
+    match mnemonic {
+        Some(m) => Ok(m.words().map(|w| w.to_string()).collect()),
+        None => Err("No mnemonic found — this node may be using a legacy seed without backup".to_string()),
+    }
+}
+
 // ─── Nostr Identity Commands ────────────────────────────────
 
 #[tauri::command]
@@ -833,19 +844,18 @@ pub fn stream_tick(
                         );
                     }
                     Err(e) => {
-                        // Payment failed but credits already deducted.
-                        // On Signet this is acceptable — log and continue.
-                        // TODO (pre-mainnet): Implement optimistic deduction with rollback:
-                        //   1. Deduct credits into PENDING state (not finalized)
-                        //   2. On PaymentSuccessful event → finalize deduction
-                        //   3. On PaymentFailed event → refund credits
-                        //   4. On timeout (~120s, no event) → refund credits
-                        //   Use payment_id as idempotency key. Event loop in events.rs
-                        //   already emits payment_successful/payment_failed.
-                        log::error!(
-                            "Keysend failed: {} sats to {}. Error: {:?}. Track: {}",
-                            artist_sats, node_id_hex, e, session.track_id,
-                        );
+                        // Keysend failed immediately — refund the optimistically deducted credits
+                        if let Err(refund_err) = crate::credits::refund_credits(&credits_state, listener_cost) {
+                            log::error!(
+                                "CRITICAL: Failed to refund {} sats after keysend failure: {}. Track: {}",
+                                listener_cost, refund_err, session.track_id,
+                            );
+                        } else {
+                            log::warn!(
+                                "Keysend failed, {} sats refunded to credits. Error: {:?}. Track: {}",
+                                listener_cost, e, session.track_id,
+                            );
+                        }
                     }
                 }
             } else {
@@ -1053,5 +1063,44 @@ pub fn withdraw_onchain(
 
     Ok(OnchainResult {
         txid: format!("{}", txid),
+    })
+}
+
+// ─── Invoice Commands ─────────────────────────────────────
+
+/// Create a BOLT 11 invoice for receiving Lightning payments (artist mode)
+#[derive(serde::Serialize)]
+pub struct InvoiceResult {
+    pub bolt11: String,
+    pub amount_sats: u64,
+    pub expiry_secs: u32,
+}
+
+#[tauri::command]
+pub fn ldk_create_invoice(
+    amount_sats: u64,
+    description: String,
+    state: State<LdkState>,
+) -> Result<InvoiceResult, String> {
+    let node_lock = state.node.lock().map_err(|e| e.to_string())?;
+    let node = node_lock.as_ref().ok_or("Node is not running")?;
+
+    let amount_msat = amount_sats * 1000;
+    let expiry_secs: u32 = 3600; // 1 hour
+
+    let desc = ldk_node::lightning_invoice::Description::new(description.clone())
+        .map_err(|e| format!("Invalid invoice description: {:?}", e))?;
+    let invoice_desc = ldk_node::lightning_invoice::Bolt11InvoiceDescription::Direct(desc);
+
+    let invoice = node.bolt11_payment().receive(amount_msat, &invoice_desc, expiry_secs)
+        .map_err(|e| format!("Failed to create invoice: {:?}", e))?;
+
+    let bolt11_str = invoice.to_string();
+    log::info!("Created BOLT 11 invoice: {} sats, desc=\"{}\"", amount_sats, description);
+
+    Ok(InvoiceResult {
+        bolt11: bolt11_str,
+        amount_sats,
+        expiry_secs,
     })
 }

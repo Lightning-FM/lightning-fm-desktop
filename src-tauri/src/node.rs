@@ -2,8 +2,10 @@
 // Wraps ldk-node's Builder/Node into Tauri-friendly state and commands.
 
 use ldk_node::{Builder, Node};
+use ldk_node::bip39::Mnemonic;
 use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
+use keyring::Entry;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
@@ -68,6 +70,73 @@ const DEFAULT_LISTENING_PORT: u16 = 9735;
 fn data_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Could not determine home directory");
     home.join(".lightning-fm").join("ldk")
+}
+
+// ─── BIP39 mnemonic + Keychain management ──────────────────
+
+const KEYRING_SERVICE: &str = "fm.lightning.desktop";
+const KEYRING_LDK_MNEMONIC: &str = "ldk-mnemonic";
+
+/// Check if an LDK seed file already exists on disk (created by a previous
+/// run before mnemonic backup was implemented).
+fn has_legacy_seed_file() -> bool {
+    data_dir().join("keys_seed").exists()
+}
+
+/// Load mnemonic from macOS Keychain.
+/// Returns Ok(Some(mnemonic)) if found, Ok(None) if no entry, Err on failure.
+pub fn load_mnemonic_from_keychain() -> Result<Option<Mnemonic>, String> {
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_LDK_MNEMONIC)
+        .map_err(|e| format!("Keyring access error: {}", e))?;
+
+    match entry.get_password() {
+        Ok(phrase) => {
+            let mnemonic: Mnemonic = phrase.parse()
+                .map_err(|e| format!("Invalid stored mnemonic: {}", e))?;
+            Ok(Some(mnemonic))
+        }
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(format!("Keyring read error: {}", e)),
+    }
+}
+
+/// Store mnemonic in macOS Keychain.
+fn store_mnemonic_in_keychain(mnemonic: &Mnemonic) -> Result<(), String> {
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_LDK_MNEMONIC)
+        .map_err(|e| format!("Keyring access error: {}", e))?;
+
+    entry.set_password(&mnemonic.to_string())
+        .map_err(|e| format!("Failed to store mnemonic in keychain: {}", e))?;
+
+    Ok(())
+}
+
+/// Load an existing mnemonic from Keychain, or generate a new one and store it.
+/// Returns None if a legacy seed file exists without a Keychain backup — the
+/// node will fall back to the on-disk seed in that case.
+fn load_or_create_mnemonic() -> Result<Option<Mnemonic>, String> {
+    // Check Keychain first
+    if let Some(mnemonic) = load_mnemonic_from_keychain()? {
+        log::info!("LDK mnemonic loaded from Keychain");
+        return Ok(Some(mnemonic));
+    }
+
+    // No mnemonic in Keychain — check if there's a legacy seed on disk
+    if has_legacy_seed_file() {
+        log::warn!(
+            "Legacy LDK seed file found at {:?} but no mnemonic in Keychain. \
+             The node will start using the on-disk seed, but it is NOT backed up. \
+             Consider re-creating your Lightning identity to enable mnemonic backup.",
+            data_dir().join("keys_seed")
+        );
+        return Ok(None);
+    }
+
+    // Fresh install — generate a new mnemonic
+    let mnemonic = ldk_node::generate_entropy_mnemonic(None);
+    store_mnemonic_in_keychain(&mnemonic)?;
+    log::info!("New LDK mnemonic generated and stored in Keychain");
+    Ok(Some(mnemonic))
 }
 
 /// Parse an LSP config into the types ldk-node expects.
@@ -154,9 +223,20 @@ pub fn start_node(config: &NodeConfig, esplora_url: &str, rgs_url: &str) -> Resu
     let lsp = resolve_lsp_config(config);
     let (lsp_addr, lsp_pubkey, lsp_token) = parse_lsp_config(&lsp)?;
 
+    // Load or create mnemonic for seed derivation
+    let mnemonic = load_or_create_mnemonic()?;
+
     let mut builder = Builder::new();
     builder.set_network(Network::Signet);
     builder.set_storage_dir_path(storage_dir.to_string_lossy().to_string());
+
+    if let Some(m) = mnemonic {
+        builder.set_entropy_bip39_mnemonic(m, None);
+        log::info!("LDK node configured with BIP39 mnemonic seed");
+    } else {
+        log::warn!("LDK node using legacy on-disk seed (no mnemonic backup)");
+    }
+
     builder.set_chain_source_esplora(esplora_url.to_string(), None);
     builder.set_gossip_source_rgs(rgs_url.to_string());
 
