@@ -66,10 +66,101 @@ const DEFAULT_LSP_NODE_ID: &str = "0371d6fd7d75de2d0372d03ea00e8bacdacb50c27d0ea
 /// Default listening port for artist mode
 const DEFAULT_LISTENING_PORT: u16 = 9735;
 
-/// Returns the LDK data directory: ~/.lightning-fm/ldk/
+// ─── Environment-driven dev-mode config ────────────────────
+//
+// When LFM_NETWORK=regtest is set, the desktop app targets a local dev
+// cluster (see lightning-fm/infra/dev-cluster/). Signet + Mutinynet remain
+// the default when LFM_NETWORK is unset or any other value.
+
+/// Read LFM_NETWORK from env. Defaults to Signet (production/Mutinynet path).
+pub fn network_from_env() -> Network {
+    match std::env::var("LFM_NETWORK").ok().as_deref() {
+        Some("regtest") => Network::Regtest,
+        Some("testnet") => Network::Testnet,
+        Some("bitcoin") | Some("mainnet") => Network::Bitcoin,
+        _ => Network::Signet,
+    }
+}
+
+/// Read LFM_LSP_* env vars. Returns None if either NODE_ID or ADDRESS is missing,
+/// so callers fall through to the Mutinynet default.
+pub fn lsp_from_env() -> Option<LspConfig> {
+    let node_id = std::env::var("LFM_LSP_NODE_ID").ok()?;
+    let address = std::env::var("LFM_LSP_ADDRESS").ok()?;
+    if node_id.is_empty() || address.is_empty() {
+        return None;
+    }
+    Some(LspConfig {
+        node_id,
+        address,
+        token: std::env::var("LFM_LSP_TOKEN").ok(),
+    })
+}
+
+/// Parsed bitcoind RPC URL pieces for ldk-node's set_chain_source_bitcoind_rpc.
+#[derive(Clone, Debug)]
+pub struct BitcoindRpcConfig {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub pass: String,
+}
+
+/// Parse LFM_BITCOIND_RPC_URL (http://user:pass@host:port). None if unset/invalid.
+pub fn bitcoind_rpc_from_env() -> Option<BitcoindRpcConfig> {
+    let url = std::env::var("LFM_BITCOIND_RPC_URL").ok()?;
+    let without_scheme = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://"))?;
+    let (creds, host_port) = without_scheme.split_once('@')?;
+    let (user, pass) = creds.split_once(':')?;
+    let (host, port_str) = host_port.split_once(':')?;
+    let port: u16 = port_str.parse().ok()?;
+    Some(BitcoindRpcConfig {
+        host: host.to_string(),
+        port,
+        user: user.to_string(),
+        pass: pass.to_string(),
+    })
+}
+
+/// Chain source decided at `ldk_start` time. Esplora+RGS for signet, bitcoind
+/// RPC for regtest. `prepare_chain_source()` picks the right one.
+#[derive(Clone, Debug)]
+pub enum ChainSourceConfig {
+    Esplora { esplora_url: String, rgs_url: String },
+    BitcoindRpc(BitcoindRpcConfig),
+}
+
+/// Decide the chain source based on LFM_NETWORK + env. Async because the
+/// signet path does HTTP health checks against Esplora.
+pub async fn prepare_chain_source() -> Result<ChainSourceConfig, String> {
+    match network_from_env() {
+        Network::Regtest => {
+            let rpc = bitcoind_rpc_from_env().ok_or_else(|| {
+                "LFM_NETWORK=regtest requires LFM_BITCOIND_RPC_URL=http://user:pass@host:port".to_string()
+            })?;
+            log::info!("Chain source: bitcoind RPC at {}:{}", rpc.host, rpc.port);
+            Ok(ChainSourceConfig::BitcoindRpc(rpc))
+        }
+        _ => {
+            let (esplora_url, rgs_url) = find_healthy_endpoint().await?;
+            Ok(ChainSourceConfig::Esplora { esplora_url, rgs_url })
+        }
+    }
+}
+
+/// Returns the LDK data directory. Signet stays at ~/.lightning-fm/ldk/ for
+/// backward compatibility with existing users. Other networks get a subpath
+/// so you can flip between regtest and signet without corrupting state.
 fn data_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Could not determine home directory");
-    home.join(".lightning-fm").join("ldk")
+    let base = home.join(".lightning-fm").join("ldk");
+    match network_from_env() {
+        Network::Signet => base,
+        Network::Regtest => base.join("regtest"),
+        Network::Testnet => base.join("testnet"),
+        Network::Bitcoin => base.join("mainnet"),
+        _ => base,
+    }
 }
 
 // ─── BIP39 mnemonic + Keychain management ──────────────────
@@ -158,13 +249,22 @@ pub fn parse_listening_address(port: u16) -> Result<SocketAddress, String> {
         .map_err(|_| format!("Invalid listening address: {}", addr_str))
 }
 
-/// Resolve the LSP config: use provided config or fall back to Mutinynet default.
+/// Resolve the LSP config. Preference order:
+///   1. Explicit `NodeConfig.lsp` (from frontend)
+///   2. LFM_LSP_* env vars (dev cluster or custom LSP)
+///   3. Mutinynet LTBL default (shipping production default)
 pub fn resolve_lsp_config(config: &NodeConfig) -> LspConfig {
-    config.lsp.clone().unwrap_or(LspConfig {
+    if let Some(lsp) = config.lsp.clone() {
+        return lsp;
+    }
+    if let Some(lsp) = lsp_from_env() {
+        return lsp;
+    }
+    LspConfig {
         address: DEFAULT_LSP_ADDRESS.to_string(),
         node_id: DEFAULT_LSP_NODE_ID.to_string(),
         token: None,
-    })
+    }
 }
 
 /// Esplora endpoints to try in order. If the primary is down, we fall back.
@@ -212,10 +312,11 @@ pub async fn find_healthy_endpoint() -> Result<(String, String), String> {
     Err("All Esplora endpoints are unreachable".to_string())
 }
 
-/// Build and start the LDK node with a known-good Esplora endpoint.
-/// Call find_healthy_endpoint() first to get the URLs.
+/// Build and start the LDK node with a pre-decided chain source.
+/// Call `prepare_chain_source()` first to get the ChainSourceConfig.
 /// This is a blocking function — call from spawn_blocking if in async context.
-pub fn start_node(config: &NodeConfig, esplora_url: &str, rgs_url: &str) -> Result<Arc<Node>, String> {
+pub fn start_node(config: &NodeConfig, chain_source: &ChainSourceConfig) -> Result<Arc<Node>, String> {
+    let network = network_from_env();
     let storage_dir = data_dir();
     std::fs::create_dir_all(&storage_dir)
         .map_err(|e| format!("Failed to create data dir: {}", e))?;
@@ -227,7 +328,7 @@ pub fn start_node(config: &NodeConfig, esplora_url: &str, rgs_url: &str) -> Resu
     let mnemonic = load_or_create_mnemonic()?;
 
     let mut builder = Builder::new();
-    builder.set_network(Network::Signet);
+    builder.set_network(network);
     builder.set_storage_dir_path(storage_dir.to_string_lossy().to_string());
 
     if let Some(m) = mnemonic {
@@ -237,8 +338,23 @@ pub fn start_node(config: &NodeConfig, esplora_url: &str, rgs_url: &str) -> Resu
         log::warn!("LDK node using legacy on-disk seed (no mnemonic backup)");
     }
 
-    builder.set_chain_source_esplora(esplora_url.to_string(), None);
-    builder.set_gossip_source_rgs(rgs_url.to_string());
+    match chain_source {
+        ChainSourceConfig::Esplora { esplora_url, rgs_url } => {
+            builder.set_chain_source_esplora(esplora_url.clone(), None);
+            builder.set_gossip_source_rgs(rgs_url.clone());
+            log::info!("Chain source: Esplora {}", esplora_url);
+        }
+        ChainSourceConfig::BitcoindRpc(rpc) => {
+            builder.set_chain_source_bitcoind_rpc(
+                rpc.host.clone(),
+                rpc.port,
+                rpc.user.clone(),
+                rpc.pass.clone(),
+            );
+            // No RGS on regtest — no public gossip graph exists.
+            log::info!("Chain source: bitcoind RPC {}:{}", rpc.host, rpc.port);
+        }
+    }
 
     builder.set_liquidity_source_lsps2(lsp_pubkey, lsp_addr, lsp_token);
     log::info!("LSPS2 configured: {} @ {}", lsp.node_id, lsp.address);
@@ -254,7 +370,7 @@ pub fn start_node(config: &NodeConfig, esplora_url: &str, rgs_url: &str) -> Resu
     let node = builder.build().map_err(|e| format!("Failed to build node: {:?}", e))?;
     node.start().map_err(|e| format!("Failed to start node: {:?}", e))?;
 
-    log::info!("LDK node started via {}: {}", esplora_url, node.node_id());
+    log::info!("LDK node started on {:?}: {}", network, node.node_id());
     Ok(Arc::new(node))
 }
 
@@ -304,7 +420,7 @@ pub fn get_node_info(node: &Node, artist_mode: bool) -> NodeInfo {
 
     NodeInfo {
         node_id: node.node_id().to_string(),
-        network: "signet".to_string(),
+        network: network_from_env().to_string(),
         listening_addresses: addrs,
         num_channels: channels.len(),
         num_peers: peers.len(),
@@ -544,7 +660,202 @@ mod tests {
     fn start_node_rejects_invalid_esplora_url() {
         // start_node should fail gracefully with a bad URL, not panic
         let config = NodeConfig::default();
-        let result = start_node(&config, "not-a-url", "also-not-a-url");
+        let chain = ChainSourceConfig::Esplora {
+            esplora_url: "not-a-url".to_string(),
+            rgs_url: "also-not-a-url".to_string(),
+        };
+        let result = start_node(&config, &chain);
         assert!(result.is_err());
+    }
+
+    // ─── Env-driven dev-mode config tests ───────────────────
+    //
+    // These mutate process env, which is global. Tests in this module
+    // serialize via a mutex so they don't race with each other or with
+    // other integration tests that care about LFM_* vars.
+
+    use std::sync::Mutex;
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_env<F: FnOnce()>(vars: &[(&str, Option<&str>)], f: F) {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let prev: Vec<(String, Option<String>)> = vars.iter()
+            .map(|(k, _)| (k.to_string(), std::env::var(k).ok()))
+            .collect();
+        for (k, v) in vars {
+            match v {
+                Some(val) => std::env::set_var(k, val),
+                None => std::env::remove_var(k),
+            }
+        }
+        f();
+        for (k, v) in prev {
+            match v {
+                Some(val) => std::env::set_var(&k, val),
+                None => std::env::remove_var(&k),
+            }
+        }
+    }
+
+    #[test]
+    fn network_from_env_defaults_to_signet() {
+        with_env(&[("LFM_NETWORK", None)], || {
+            assert_eq!(network_from_env(), Network::Signet);
+        });
+    }
+
+    #[test]
+    fn network_from_env_parses_regtest() {
+        with_env(&[("LFM_NETWORK", Some("regtest"))], || {
+            assert_eq!(network_from_env(), Network::Regtest);
+        });
+    }
+
+    #[test]
+    fn network_from_env_unknown_value_falls_back_to_signet() {
+        with_env(&[("LFM_NETWORK", Some("not-a-network"))], || {
+            assert_eq!(network_from_env(), Network::Signet);
+        });
+    }
+
+    #[test]
+    fn lsp_from_env_requires_both_node_id_and_address() {
+        with_env(&[
+            ("LFM_LSP_NODE_ID", Some("02aa")),
+            ("LFM_LSP_ADDRESS", None),
+        ], || {
+            assert!(lsp_from_env().is_none());
+        });
+        with_env(&[
+            ("LFM_LSP_NODE_ID", None),
+            ("LFM_LSP_ADDRESS", Some("127.0.0.1:19737")),
+        ], || {
+            assert!(lsp_from_env().is_none());
+        });
+    }
+
+    #[test]
+    fn lsp_from_env_parses_complete_config() {
+        with_env(&[
+            ("LFM_LSP_NODE_ID", Some("02ab")),
+            ("LFM_LSP_ADDRESS", Some("127.0.0.1:19737")),
+            ("LFM_LSP_TOKEN", Some("dev-token")),
+        ], || {
+            let lsp = lsp_from_env().expect("should parse");
+            assert_eq!(lsp.node_id, "02ab");
+            assert_eq!(lsp.address, "127.0.0.1:19737");
+            assert_eq!(lsp.token, Some("dev-token".to_string()));
+        });
+    }
+
+    #[test]
+    fn bitcoind_rpc_from_env_parses_url() {
+        with_env(&[("LFM_BITCOIND_RPC_URL", Some("http://alice:sekret@localhost:28443"))], || {
+            let rpc = bitcoind_rpc_from_env().expect("should parse");
+            assert_eq!(rpc.host, "localhost");
+            assert_eq!(rpc.port, 28443);
+            assert_eq!(rpc.user, "alice");
+            assert_eq!(rpc.pass, "sekret");
+        });
+    }
+
+    #[test]
+    fn bitcoind_rpc_from_env_rejects_missing_scheme() {
+        with_env(&[("LFM_BITCOIND_RPC_URL", Some("alice:sekret@localhost:28443"))], || {
+            assert!(bitcoind_rpc_from_env().is_none());
+        });
+    }
+
+    #[test]
+    fn bitcoind_rpc_from_env_rejects_missing_creds() {
+        with_env(&[("LFM_BITCOIND_RPC_URL", Some("http://localhost:28443"))], || {
+            assert!(bitcoind_rpc_from_env().is_none());
+        });
+    }
+
+    #[test]
+    fn bitcoind_rpc_from_env_none_when_unset() {
+        with_env(&[("LFM_BITCOIND_RPC_URL", None)], || {
+            assert!(bitcoind_rpc_from_env().is_none());
+        });
+    }
+
+    #[test]
+    fn data_dir_signet_is_backward_compatible() {
+        with_env(&[("LFM_NETWORK", None)], || {
+            let dir = data_dir();
+            // Default (signet) must stay at ~/.lightning-fm/ldk/ — no subdir.
+            assert!(dir.ends_with("ldk"), "signet data_dir should be ldk/, got {:?}", dir);
+        });
+    }
+
+    #[test]
+    fn data_dir_regtest_uses_subpath() {
+        with_env(&[("LFM_NETWORK", Some("regtest"))], || {
+            let dir = data_dir();
+            assert!(dir.ends_with("ldk/regtest"), "regtest data_dir should be ldk/regtest, got {:?}", dir);
+        });
+    }
+
+    #[test]
+    fn resolve_lsp_uses_env_when_config_lsp_is_none() {
+        with_env(&[
+            ("LFM_LSP_NODE_ID", Some("02dev")),
+            ("LFM_LSP_ADDRESS", Some("127.0.0.1:19737")),
+        ], || {
+            let lsp = resolve_lsp_config(&NodeConfig::default());
+            assert_eq!(lsp.node_id, "02dev");
+            assert_eq!(lsp.address, "127.0.0.1:19737");
+        });
+    }
+
+    #[test]
+    fn resolve_lsp_explicit_config_beats_env() {
+        with_env(&[
+            ("LFM_LSP_NODE_ID", Some("02env")),
+            ("LFM_LSP_ADDRESS", Some("10.0.0.1:9735")),
+        ], || {
+            let config = NodeConfig {
+                lsp: Some(LspConfig {
+                    node_id: "02explicit".to_string(),
+                    address: "192.168.1.1:9735".to_string(),
+                    token: None,
+                }),
+                ..Default::default()
+            };
+            let lsp = resolve_lsp_config(&config);
+            assert_eq!(lsp.node_id, "02explicit");
+        });
+    }
+
+    #[test]
+    fn resolve_lsp_falls_back_to_mutinynet() {
+        with_env(&[
+            ("LFM_LSP_NODE_ID", None),
+            ("LFM_LSP_ADDRESS", None),
+        ], || {
+            let lsp = resolve_lsp_config(&NodeConfig::default());
+            assert_eq!(lsp.address, DEFAULT_LSP_ADDRESS);
+            assert_eq!(lsp.node_id, DEFAULT_LSP_NODE_ID);
+        });
+    }
+
+    #[tokio::test]
+    async fn prepare_chain_source_regtest_requires_rpc_url() {
+        with_env(&[
+            ("LFM_NETWORK", Some("regtest")),
+            ("LFM_BITCOIND_RPC_URL", None),
+        ], || {});
+        // Env set/unset are synchronous; now call the async helper.
+        // Note: env is process-global; concurrent tokio tests that race this
+        // are serialized via ENV_LOCK only for the set-phase. The call below
+        // re-reads the env, so this is safe as long as no other test is
+        // *concurrently* mutating the same vars.
+        std::env::set_var("LFM_NETWORK", "regtest");
+        std::env::remove_var("LFM_BITCOIND_RPC_URL");
+        let result = prepare_chain_source().await;
+        std::env::remove_var("LFM_NETWORK");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("LFM_BITCOIND_RPC_URL"));
     }
 }

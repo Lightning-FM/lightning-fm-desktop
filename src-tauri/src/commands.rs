@@ -33,12 +33,13 @@ pub async fn ldk_start(
         ..Default::default()
     };
 
-    // Async health check — find a working Esplora endpoint before touching LDK
-    let (esplora_url, rgs_url) = crate::node::find_healthy_endpoint().await?;
+    // Decide chain source (Esplora for signet, bitcoind RPC for regtest).
+    // Async because the signet path runs Esplora health checks.
+    let chain_source = crate::node::prepare_chain_source().await?;
 
     // Run the blocking LDK build+start on a dedicated thread
     let node = tokio::task::spawn_blocking(move || {
-        crate::node::start_node(&config, &esplora_url, &rgs_url)
+        crate::node::start_node(&config, &chain_source)
     })
     .await
     .map_err(|e| format!("Node start task panicked: {}", e))??;
@@ -1114,4 +1115,91 @@ pub fn ldk_create_invoice(
         amount_sats,
         expiry_secs,
     })
+}
+
+// ─── Channel Commands ────────────────────────────────────
+
+/// Open a Lightning channel to a peer node
+#[derive(serde::Serialize)]
+pub struct ChannelOpenResult {
+    pub channel_id: String,
+}
+
+#[tauri::command]
+pub async fn ldk_open_channel(
+    node_id: String,
+    address: String,
+    amount_sats: u64,
+    state: State<'_, LdkState>,
+) -> Result<ChannelOpenResult, String> {
+    // Clone the Arc<Node> so we can move it into spawn_blocking
+    let node = {
+        let node_lock = state.node.lock().map_err(|e| e.to_string())?;
+        node_lock.as_ref().ok_or("Node is not running")?.clone()
+    };
+
+    // Run blocking LDK operations on a blocking thread
+    tokio::task::spawn_blocking(move || {
+        let pubkey: ldk_node::bitcoin::secp256k1::PublicKey = node_id.parse()
+            .map_err(|e| format!("Invalid node ID: {e}"))?;
+
+        let addr: ldk_node::lightning::ln::msgs::SocketAddress = address.parse()
+            .map_err(|e| format!("Invalid address: {e}"))?;
+
+        // Connect to the peer first (ignore "already connected" errors)
+        match node.connect(pubkey, addr.clone(), true) {
+            Ok(_) => log::info!("Connected to peer: {}", node_id),
+            Err(e) => {
+                let err_str = format!("{e:?}");
+                if err_str.contains("AlreadyConnected") {
+                    log::info!("Already connected to peer: {}", node_id);
+                } else {
+                    return Err(format!("Failed to connect to peer: {e:?}"));
+                }
+            }
+        }
+
+        // Open the channel
+        let user_channel_id = node.open_channel(pubkey, addr, amount_sats, None, None)
+            .map_err(|e| format!("Failed to open channel: {e:?}"))?;
+
+        log::info!("Channel opened: {} sats to {}. UserChannelId: {}", amount_sats, node_id, user_channel_id);
+
+        Ok(ChannelOpenResult {
+            channel_id: format!("{}", user_channel_id),
+        })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Connect to a peer without opening a channel
+#[tauri::command]
+pub async fn ldk_connect_peer(
+    node_id: String,
+    address: String,
+    state: State<'_, LdkState>,
+) -> Result<String, String> {
+    let node = {
+        let node_lock = state.node.lock().map_err(|e| e.to_string())?;
+        node_lock.as_ref().ok_or("Node is not running")?.clone()
+    };
+
+    let addr_str = address.clone();
+    let nid = node_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let pubkey: ldk_node::bitcoin::secp256k1::PublicKey = node_id.parse()
+            .map_err(|e| format!("Invalid node ID: {e}"))?;
+
+        let addr: ldk_node::lightning::ln::msgs::SocketAddress = address.parse()
+            .map_err(|e| format!("Invalid address: {e}"))?;
+
+        node.connect(pubkey, addr, true)
+            .map_err(|e| format!("Failed to connect to peer: {e:?}"))?;
+
+        log::info!("Connected to peer: {} @ {}", nid, addr_str);
+        Ok(format!("Connected to {}", nid))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
 }
