@@ -1104,11 +1104,22 @@ pub fn ldk_create_invoice(
         .map_err(|e| format!("Invalid invoice description: {:?}", e))?;
     let invoice_desc = ldk_node::lightning_invoice::Bolt11InvoiceDescription::Direct(desc);
 
-    let invoice = node.bolt11_payment().receive(amount_msat, &invoice_desc, expiry_secs)
-        .map_err(|e| format!("Failed to create invoice: {:?}", e))?;
+    // Use receive_via_jit_channel so first-time listeners with no inbound liquidity
+    // can still receive payments: the configured LSPS2 LSP opens a JIT channel on
+    // invoice payment. Existing receivers with inbound capacity also work — the LSP
+    // routing hint lets payers either route through existing channels or trigger
+    // the JIT open, whichever the routing layer prefers.
+    //
+    // max_total_lsp_fee_limit_msat = None → accept the LSP's cheapest offer.
+    let invoice = node.bolt11_payment()
+        .receive_via_jit_channel(amount_msat, &invoice_desc, expiry_secs, None)
+        .map_err(|e| format!("Failed to create JIT invoice: {:?}", e))?;
 
     let bolt11_str = invoice.to_string();
-    log::info!("Created BOLT 11 invoice: {} sats, desc=\"{}\"", amount_sats, description);
+    log::info!(
+        "Created BOLT 11 JIT invoice: {} sats, desc=\"{}\"",
+        amount_sats, description,
+    );
 
     Ok(InvoiceResult {
         bolt11: bolt11_str,

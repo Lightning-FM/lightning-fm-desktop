@@ -171,6 +171,22 @@ pub fn refund_credits(state: &CreditsState, amount_sats: u64) -> Result<(), Stri
     write_credits_file(remaining, used)
 }
 
+/// Add sats to the credits pool. Called when a Lightning payment is received,
+/// so incoming sats flow into the same unified balance the streaming engine deducts from.
+/// Semantically distinct from refund_credits (which rolls back a failed send).
+pub fn add_credits(state: &CreditsState, amount_sats: u64) -> Result<(), String> {
+    let (remaining, used) = {
+        let mut rem = state.credits_remaining.lock()
+            .map_err(|e| format!("Failed to lock credits_remaining: {e}"))?;
+        *rem += amount_sats;
+        let used = *state.credits_used.lock()
+            .map_err(|e| format!("Failed to lock credits_used: {e}"))?;
+        (*rem, used)
+    };
+
+    write_credits_file(remaining, used)
+}
+
 /// Check if user can stream full tracks (has credits or funded wallet)
 pub fn can_stream(state: &CreditsState) -> Result<bool, String> {
     let remaining = *state.credits_remaining.lock()
@@ -316,6 +332,36 @@ mod tests {
 
         refund_credits(&state, 300).unwrap();
         assert_eq!(*state.credits_remaining.lock().unwrap(), 1000);
+    }
+
+    #[test]
+    fn add_credits_increases_balance() {
+        let state = test_state();
+        assert_eq!(*state.credits_remaining.lock().unwrap(), 1000);
+
+        add_credits(&state, 5000).unwrap();
+        assert_eq!(*state.credits_remaining.lock().unwrap(), 6000);
+    }
+
+    #[test]
+    fn add_credits_works_when_balance_is_zero() {
+        let state = test_state();
+        deduct_credits(&state, 1000).unwrap();
+        assert_eq!(*state.credits_remaining.lock().unwrap(), 0);
+
+        add_credits(&state, 10_000).unwrap();
+        assert_eq!(*state.credits_remaining.lock().unwrap(), 10_000);
+    }
+
+    #[test]
+    fn add_credits_does_not_flip_used_flag() {
+        let state = test_state();
+        let used_before = *state.credits_used.lock().unwrap();
+        assert!(!used_before);
+
+        add_credits(&state, 500).unwrap();
+        let used_after = *state.credits_used.lock().unwrap();
+        assert!(!used_after, "add_credits should not touch the used flag");
     }
 
     #[test]
