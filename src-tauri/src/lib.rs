@@ -33,6 +33,8 @@ use commands::{
     metadata_read, metadata_write, artwork_extract, waveform_generate,
     // Withdrawals & invoices
     withdraw_lightning, withdraw_onchain, ldk_create_invoice,
+    // Channel management
+    ldk_open_channel, ldk_connect_peer,
     // Playback
     playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
     catalog_load_batch, get_test_data_dir,
@@ -66,6 +68,8 @@ pub fn run() {
             metadata_read, metadata_write, artwork_extract, waveform_generate,
             // Withdrawals & invoices
             withdraw_lightning, withdraw_onchain, ldk_create_invoice,
+            // Channel management
+            ldk_open_channel, ldk_connect_peer,
             // Playback
             playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
             catalog_load_batch, get_test_data_dir,

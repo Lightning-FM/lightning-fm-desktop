@@ -1138,11 +1138,21 @@ pub struct ChannelOpenResult {
 
 #[tauri::command]
 pub async fn ldk_open_channel(
-    node_id: String,
-    address: String,
+    node_id: Option<String>,
+    address: Option<String>,
     amount_sats: u64,
     state: State<'_, LdkState>,
 ) -> Result<ChannelOpenResult, String> {
+    // When the frontend omits the peer, target the resolved LSP (LFM_LSP_* env
+    // or the Mutinynet default) — same chain resolve_lsp_config uses at startup.
+    let (node_id, address) = match (node_id, address) {
+        (Some(n), Some(a)) => (n, a),
+        _ => {
+            let lsp = crate::node::resolve_lsp_config(&NodeConfig::default());
+            (lsp.node_id, lsp.address)
+        }
+    };
+
     // Clone the Arc<Node> so we can move it into spawn_blocking
     let node = {
         let node_lock = state.node.lock().map_err(|e| e.to_string())?;

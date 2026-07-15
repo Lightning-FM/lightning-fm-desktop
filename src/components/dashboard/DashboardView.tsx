@@ -8,6 +8,7 @@ import { StatCard } from "./StatCard";
 import { EarningsFeed } from "./EarningsFeed";
 import { NodeStatus } from "./NodeStatus";
 import { WithdrawPanel } from "./WithdrawPanel";
+import { ReceivePanel } from "./ReceivePanel";
 
 export function DashboardView() {
   const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
@@ -16,6 +17,8 @@ export function DashboardView() {
   const [totalEarned, setTotalEarned] = useState(0);
   const [totalSpent, setTotalSpent] = useState(0);
   const [sessionStart] = useState(Date.now());
+  const [channelOpening, setChannelOpening] = useState(false);
+  const [channelError, setChannelError] = useState<string | null>(null);
 
   // Poll node info and balance every 10 seconds
   useEffect(() => {
@@ -165,6 +168,43 @@ export function DashboardView() {
               onStartNode={handleStartNode}
               onStopNode={handleStopNode}
             />
+            {/* Bootstrap: open channel to LSP when node is running but has 0 channels */}
+            {nodeInfo?.is_running && nodeInfo?.num_channels === 0 && (balance?.spendable_onchain_sats ?? 0) > 0 && (
+              <div className="border border-border p-3">
+                <span className="font-label-mono text-[10px] text-amber uppercase tracking-wider">Bootstrap Channel</span>
+                <p className="font-body-mono text-[11px] text-secondary-foreground mt-1 mb-2">
+                  Open a channel to the LSP to enable Lightning payments.
+                </p>
+                {channelError && (
+                  <p className="font-body-mono text-[10px] text-red-400 mb-2">{channelError}</p>
+                )}
+                <button
+                  className="w-full py-1.5 border border-amber text-amber font-label-mono text-[11px] uppercase tracking-wider hover:bg-amber/10 transition-all disabled:opacity-50"
+                  disabled={channelOpening}
+                  onClick={async () => {
+                    setChannelOpening(true);
+                    setChannelError(null);
+                    try {
+                      // Peer omitted — backend targets the resolved LSP
+                      // (LFM_LSP_* env or Mutinynet default)
+                      await invoke("ldk_open_channel", {
+                        amountSats: 500000,
+                      });
+                      refreshNodeInfo();
+                      refreshBalance();
+                    } catch (e) {
+                      console.error("Failed to open channel:", e);
+                      setChannelError(String(e));
+                    } finally {
+                      setChannelOpening(false);
+                    }
+                  }}
+                >
+                  {channelOpening ? "Opening..." : "Open 500k Channel to LSP"}
+                </button>
+              </div>
+            )}
+            <ReceivePanel nodeRunning={nodeInfo?.is_running ?? false} />
             <WithdrawPanel />
           </div>
         </div>
