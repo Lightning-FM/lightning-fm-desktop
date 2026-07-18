@@ -818,6 +818,21 @@ pub fn stream_tick(
     let (artist_sats, platform_sats) = crate::streaming::calculate_split(session.artist_direct);
     let listener_cost = crate::streaming::listener_cost_per_interval();
 
+    // Resolve everything fallible BEFORE deducting, so no `?` can return
+    // after credits leave the pool without a refund. Clone the node Arc out
+    // of the mutex so the lock isn't held across the keysend call below.
+    let keysend_target = match session.lightning_node_id {
+        Some(ref node_id_hex) => {
+            let pubkey = crate::streaming::parse_lightning_pubkey(node_id_hex)?;
+            let node = {
+                let node_lock = ldk_state.node.lock().map_err(|e| e.to_string())?;
+                (*node_lock).clone()
+            };
+            Some((node_id_hex.clone(), pubkey, node))
+        }
+        None => None,
+    };
+
     // Deduct from credits (or wallet later)
     let success = crate::credits::deduct_credits(&credits_state, listener_cost)?;
     let credits_depleted = !success;
@@ -827,10 +842,8 @@ pub fn stream_tick(
         session.record_payment();
 
         // Send keysend with custom TLV metadata if artist has a Lightning node_id
-        if let Some(ref node_id_hex) = session.lightning_node_id {
-            let node_lock = ldk_state.node.lock().map_err(|e| e.to_string())?;
-            if let Some(ref node) = *node_lock {
-                let pubkey = crate::streaming::parse_lightning_pubkey(node_id_hex)?;
+        match keysend_target {
+            Some((node_id_hex, pubkey, Some(node))) => {
                 let amount_msat = artist_sats * 1000;
                 let custom_tlvs = crate::streaming::build_custom_tlv_vec(
                     &session.track_id,
@@ -859,7 +872,8 @@ pub fn stream_tick(
                         }
                     }
                 }
-            } else {
+            }
+            Some((_, _, None)) => {
                 // LDK node not running — refund credits since no payment was sent
                 if let Err(refund_err) = crate::credits::refund_credits(&credits_state, listener_cost) {
                     log::error!(
@@ -873,11 +887,12 @@ pub fn stream_tick(
                     );
                 }
             }
-        } else {
-            log::info!(
-                "No lightning_node_id for artist — recording payment without keysend. Track: {}",
-                session.track_id,
-            );
+            None => {
+                log::info!(
+                    "No lightning_node_id for artist — recording payment without keysend. Track: {}",
+                    session.track_id,
+                );
+            }
         }
 
         log::info!(
