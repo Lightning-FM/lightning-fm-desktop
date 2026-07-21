@@ -206,21 +206,25 @@ fn store_mnemonic_in_keychain(mnemonic: &Mnemonic) -> Result<(), String> {
 /// Returns None if a legacy seed file exists without a Keychain backup — the
 /// node will fall back to the on-disk seed in that case.
 fn load_or_create_mnemonic() -> Result<Option<Mnemonic>, String> {
-    // Check Keychain first
-    if let Some(mnemonic) = load_mnemonic_from_keychain()? {
-        log::info!("LDK mnemonic loaded from Keychain");
-        return Ok(Some(mnemonic));
-    }
-
-    // No mnemonic in Keychain — check if there's a legacy seed on disk
+    // A datadir holding a legacy seed file must keep using it, no matter
+    // what's in the Keychain: the wallet store's descriptors were derived
+    // from that seed, and building with different entropy bricks the node
+    // (Descriptor mismatch → WalletSetupFailed). The Keychain mnemonic is
+    // global while datadirs are per-network, so a fresh network subtree
+    // populating the Keychain must not hijack an older wallet's entropy.
     if has_legacy_seed_file() {
         log::warn!(
-            "Legacy LDK seed file found at {:?} but no mnemonic in Keychain. \
-             The node will start using the on-disk seed, but it is NOT backed up. \
-             Consider re-creating your Lightning identity to enable mnemonic backup.",
+            "Legacy LDK seed file found at {:?} — using it for this wallet. \
+             It is NOT covered by the Keychain mnemonic backup; keep a copy \
+             of keys_seed (and the wallet store) backed up separately.",
             data_dir().join("keys_seed")
         );
         return Ok(None);
+    }
+
+    if let Some(mnemonic) = load_mnemonic_from_keychain()? {
+        log::info!("LDK mnemonic loaded from Keychain");
+        return Ok(Some(mnemonic));
     }
 
     // Fresh install — generate a new mnemonic
