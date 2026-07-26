@@ -1239,3 +1239,78 @@ pub async fn ldk_connect_peer(
     .await
     .map_err(|e| format!("Task failed: {e}"))?
 }
+
+// ─── Product Commands (downloads for sale) ───────────────────
+
+/// Publish a product listing (kind 30402). Replaces any existing listing
+/// with the same slug (addressable event semantics).
+#[tauri::command]
+pub async fn product_publish(
+    draft: crate::products::ProductDraft,
+    relay_state: State<'_, RelayState>,
+) -> Result<String, String> {
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Not connected to relays. Call relay_connect first.")?;
+    crate::products::publish_product(client, &draft, "active").await
+}
+
+/// List the signed-in artist's own product listings.
+#[tauri::command]
+pub async fn product_list_mine(
+    identity_state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<Vec<crate::products::ProductInfo>, String> {
+    let keys = identity_state.keys.lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .ok_or("No identity. Create or import one first.")?;
+
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Not connected to relays. Call relay_connect first.")?;
+    crate::products::fetch_my_products(client, keys.public_key()).await
+}
+
+/// Activate or deactivate a listing by slug — republishes the same product
+/// with the new status (same d tag replaces the previous event).
+#[tauri::command]
+pub async fn product_set_status(
+    slug: String,
+    status: String,
+    identity_state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<String, String> {
+    if !matches!(status.as_str(), "active" | "inactive") {
+        return Err(format!("Invalid status: {}", status));
+    }
+
+    let keys = identity_state.keys.lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .ok_or("No identity. Create or import one first.")?;
+
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Not connected to relays. Call relay_connect first.")?;
+
+    let products = crate::products::fetch_my_products(client, keys.public_key()).await?;
+    let existing = products.into_iter()
+        .find(|p| p.slug == slug)
+        .ok_or_else(|| format!("No product with slug '{}'", slug))?;
+
+    let draft = crate::products::ProductDraft {
+        slug: existing.slug,
+        title: existing.title,
+        summary: existing.summary,
+        description: existing.description,
+        price_sats: existing.price_sats,
+        floor_sats: existing.floor_sats,
+        product_type: existing.product_type,
+        format: existing.format,
+        image_url: existing.image_url,
+        track_refs: existing.track_refs,
+        endpoint: existing.endpoint,
+    };
+    crate::products::publish_product(client, &draft, &status).await
+}

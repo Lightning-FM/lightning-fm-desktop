@@ -71,6 +71,16 @@ export function UploadView() {
   const [identity, setIdentity] = useState<IdentityInfo | null | undefined>(undefined);
   const [showIdentityGate, setShowIdentityGate] = useState(false);
   const [publishingInProgress, setPublishingInProgress] = useState(false);
+  // Seller endpoint (artist's always-on daemon) — shared across tracks,
+  // persisted locally until it moves to proper settings
+  const [sellerEndpoint, setSellerEndpoint] = useState(
+    () => localStorage.getItem("lfm_seller_endpoint") || ""
+  );
+
+  function handleSellerEndpointChange(value: string) {
+    setSellerEndpoint(value);
+    localStorage.setItem("lfm_seller_endpoint", value);
+  }
 
   const selectedTrack = state.tracks.find((t) =>
     state.selectedTrackIds.includes(t.id)
@@ -171,6 +181,12 @@ export function UploadView() {
 
         // Waveform
         waveform: null,
+
+        // Sale — off by default; artist opts in per track
+        sellEnabled: false,
+        priceSats: 5000,
+        nameYourPrice: false,
+        floorSats: 0,
 
         // State
         stage: "draft",
@@ -378,6 +394,44 @@ export function UploadView() {
           eventId: result.event_id,
           artistNpub: result.artist_npub,
         });
+
+        // Publish the product listing (kind 30402) when selling is enabled.
+        // The track is live either way — a listing failure is surfaced but
+        // doesn't roll back the publish.
+        if (track.sellEnabled) {
+          try {
+            if (!sellerEndpoint.trim()) {
+              throw new Error(
+                "Seller endpoint not set — add your node URL in the Sell section"
+              );
+            }
+            await invoke<string>("product_publish", {
+              draft: {
+                slug: slugify(track.title),
+                title: track.title,
+                summary: `${track.format} download`,
+                description: track.description || null,
+                price_sats: track.nameYourPrice ? track.priceSats : track.priceSats,
+                floor_sats: track.nameYourPrice ? track.floorSats : null,
+                product_type: "track",
+                format: track.format.toLowerCase(),
+                image_url: null,
+                track_refs: [
+                  `31337:${result.artist_pubkey}:${slugify(track.title)}`,
+                ],
+                endpoint: sellerEndpoint.trim(),
+              },
+            });
+          } catch (err) {
+            dispatch({
+              type: "SET_STAGE",
+              id: track.id,
+              stage: "error",
+              error: `Track published, but sale listing failed: ${String(err)}`,
+            });
+            continue;
+          }
+        }
       } catch (err) {
         dispatch({
           type: "SET_STAGE",
@@ -537,6 +591,8 @@ export function UploadView() {
                   updates,
                 })
               }
+              sellerEndpoint={sellerEndpoint}
+              onSellerEndpointChange={handleSellerEndpointChange}
             />
           ) : (
             <div className="flex items-center justify-center h-full">

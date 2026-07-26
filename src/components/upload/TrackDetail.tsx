@@ -7,6 +7,8 @@ import { Waveform } from "./Waveform";
 interface TrackDetailProps {
   track: UploadTrack;
   onUpdate: (updates: Partial<UploadTrack>) => void;
+  sellerEndpoint: string;
+  onSellerEndpointChange: (value: string) => void;
 }
 
 // Genres matching common music platform taxonomies
@@ -33,7 +35,12 @@ const GENRES = [
   "Other",
 ];
 
-export function TrackDetail({ track, onUpdate }: TrackDetailProps) {
+export function TrackDetail({
+  track,
+  onUpdate,
+  sellerEndpoint,
+  onSellerEndpointChange,
+}: TrackDetailProps) {
   const [showCredits, setShowCredits] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -163,6 +170,86 @@ export function TrackDetail({ track, onUpdate }: TrackDetailProps) {
             </Field>
           </div>
         )}
+
+        {/* Sell — download product listing */}
+        <div className="border border-border p-3 flex flex-col gap-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={track.sellEnabled}
+              onChange={(e) => onUpdate({ sellEnabled: e.target.checked })}
+              className="w-4 h-4 accent-amber"
+            />
+            <span className="font-label-mono text-amber uppercase tracking-wider text-[11px]">
+              Sell this track
+            </span>
+            <span className="font-small text-muted-foreground">
+              {track.format} download — streaming stays free
+            </span>
+          </label>
+
+          {track.sellEnabled && (
+            <div className="flex flex-col gap-3 pl-6">
+              <div className="flex gap-3 items-end">
+                <Field label="Price (sats)" className="w-32">
+                  <input
+                    type="text"
+                    value={track.priceSats || ""}
+                    onChange={(e) =>
+                      onUpdate({
+                        priceSats:
+                          parseInt(e.target.value.replace(/[^0-9]/g, "")) || 0,
+                      })
+                    }
+                    placeholder="5000"
+                    className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors tabular-nums"
+                  />
+                </Field>
+                <label className="flex items-center gap-2 cursor-pointer h-8">
+                  <input
+                    type="checkbox"
+                    checked={track.nameYourPrice}
+                    onChange={(e) =>
+                      onUpdate({ nameYourPrice: e.target.checked })
+                    }
+                    className="w-4 h-4 accent-amber"
+                  />
+                  <span className="font-body-mono text-secondary-foreground text-[12px]">
+                    Name your price
+                  </span>
+                </label>
+                {track.nameYourPrice && (
+                  <Field label="Floor (sats)" className="w-28">
+                    <input
+                      type="text"
+                      value={track.floorSats || ""}
+                      onChange={(e) =>
+                        onUpdate({
+                          floorSats:
+                            parseInt(e.target.value.replace(/[^0-9]/g, "")) || 0,
+                        })
+                      }
+                      placeholder="0"
+                      className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors tabular-nums"
+                    />
+                  </Field>
+                )}
+              </div>
+              <Field
+                label="Seller endpoint"
+                hint="Your always-on node's URL — shared across all your listings"
+              >
+                <input
+                  type="text"
+                  value={sellerEndpoint}
+                  onChange={(e) => onSellerEndpointChange(e.target.value)}
+                  placeholder="https://node.yourdomain.com"
+                  className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors"
+                />
+              </Field>
+            </div>
+          )}
+        </div>
 
         {/* Advanced — collapsible */}
         <button

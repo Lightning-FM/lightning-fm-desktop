@@ -47,6 +47,12 @@ export interface UploadTrack {
   // Waveform (generated during processing)
   waveform: number[] | null; // normalized peaks 0-1
 
+  // Sale (kind 30402 product listing, published after the track event)
+  sellEnabled: boolean;
+  priceSats: number; // listed/suggested price
+  nameYourPrice: boolean; // when true, floorSats is the minimum
+  floorSats: number;
+
   // Upload state
   stage: UploadStage;
   progress: number; // 0-100 for uploading stage

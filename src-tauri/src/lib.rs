@@ -3,6 +3,7 @@
 mod node;
 mod identity;
 mod relay;
+mod products;
 mod upload;
 mod playback;
 mod credits;
@@ -29,6 +30,8 @@ use commands::{
     profile_fetch, profile_set,
     // Upload & publish
     upload_track,
+    // Products (downloads for sale)
+    product_publish, product_list_mine, product_set_status,
     // Metadata & waveform
     metadata_read, metadata_write, artwork_extract, waveform_generate,
     // Withdrawals & invoices
@@ -64,6 +67,8 @@ pub fn run() {
             profile_fetch, profile_set,
             // Upload & publish
             upload_track,
+            // Products (downloads for sale)
+            product_publish, product_list_mine, product_set_status,
             // Metadata & waveform
             metadata_read, metadata_write, artwork_extract, waveform_generate,
             // Withdrawals & invoices
