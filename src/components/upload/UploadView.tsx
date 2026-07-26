@@ -405,6 +405,17 @@ export function UploadView() {
                 "Seller endpoint not set — add your node URL in the Sell section"
               );
             }
+            // Artifact first: the listing must never point at a product the
+            // daemon can't deliver
+            await invoke("product_upload_artifact", {
+              filePath: track.filePath,
+              slug: slugify(track.title),
+              title: track.title,
+              priceSats: track.priceSats,
+              floorSats: track.nameYourPrice ? track.floorSats : null,
+              format: track.format.toLowerCase(),
+              endpoint: sellerEndpoint.trim(),
+            });
             await invoke<string>("product_publish", {
               draft: {
                 slug: slugify(track.title),

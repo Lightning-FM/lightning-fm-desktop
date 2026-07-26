@@ -31,7 +31,7 @@ use commands::{
     // Upload & publish
     upload_track,
     // Products (downloads for sale)
-    product_publish, product_list_mine, product_set_status,
+    product_publish, product_list_mine, product_set_status, product_upload_artifact,
     // Metadata & waveform
     metadata_read, metadata_write, artwork_extract, waveform_generate,
     // Withdrawals & invoices
@@ -68,7 +68,7 @@ pub fn run() {
             // Upload & publish
             upload_track,
             // Products (downloads for sale)
-            product_publish, product_list_mine, product_set_status,
+            product_publish, product_list_mine, product_set_status, product_upload_artifact,
             // Metadata & waveform
             metadata_read, metadata_write, artwork_extract, waveform_generate,
             // Withdrawals & invoices

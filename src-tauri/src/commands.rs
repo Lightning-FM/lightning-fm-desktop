@@ -1272,6 +1272,37 @@ pub async fn product_list_mine(
     crate::products::fetch_my_products(client, keys.public_key()).await
 }
 
+/// Upload the purchasable artifact for a product to the artist's seller
+/// daemon (NIP-98 authenticated PUT). Call before product_publish so the
+/// listing never points at a product the daemon can't deliver.
+#[tauri::command]
+pub async fn product_upload_artifact(
+    file_path: String,
+    slug: String,
+    title: String,
+    price_sats: u64,
+    floor_sats: Option<u64>,
+    format: String,
+    endpoint: String,
+    identity_state: State<'_, IdentityState>,
+) -> Result<(), String> {
+    let keys = identity_state.keys.lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .ok_or("No identity. Create or import one first.")?;
+
+    crate::upload::upload_artifact_to_daemon(
+        std::path::Path::new(&file_path),
+        &keys,
+        &endpoint,
+        &slug,
+        &title,
+        price_sats,
+        floor_sats,
+        &format,
+    ).await
+}
+
 /// Activate or deactivate a listing by slug — republishes the same product
 /// with the new status (same d tag replaces the previous event).
 #[tauri::command]

@@ -90,6 +90,71 @@ pub async fn create_blossom_auth(
     Ok(encoded)
 }
 
+/// Upload a purchasable artifact (lossless file) to the artist's seller
+/// daemon, authenticated with NIP-98 (kind 27235). The daemon verifies the
+/// signer against its configured ARTIST_PUBKEY and the payload hash against
+/// the body, then registers the product for the L402 purchase gate.
+pub async fn upload_artifact_to_daemon(
+    file_path: &Path,
+    keys: &Keys,
+    endpoint: &str,
+    slug: &str,
+    title: &str,
+    price_sats: u64,
+    floor_sats: Option<u64>,
+    format: &str,
+) -> Result<(), String> {
+    let (sha256, _size) = hash_file(file_path)?;
+    let base = endpoint.trim_end_matches('/');
+    // Must match the daemon's NIP-98 expected_url exactly (no query string)
+    let auth_url = format!("{}/products/{}", base, slug);
+
+    let tags = vec![
+        Tag::custom(TagKind::custom("u"), vec![auth_url.clone()]),
+        Tag::custom(TagKind::custom("method"), vec!["PUT".to_string()]),
+        Tag::custom(TagKind::custom("payload"), vec![sha256.clone()]),
+    ];
+    let event = EventBuilder::new(Kind::HttpAuth, "")
+        .tags(tags)
+        .sign_with_keys(keys)
+        .map_err(|e| format!("Failed to sign NIP-98 event: {}", e))?;
+    let event_json = serde_json::to_string(&event)
+        .map_err(|e| format!("Failed to serialize NIP-98 event: {}", e))?;
+    let auth = base64::engine::general_purpose::STANDARD.encode(event_json.as_bytes());
+
+    let bytes = std::fs::read(file_path)
+        .map_err(|e| format!("Failed to read artifact: {}", e))?;
+
+    let mut query: Vec<(&str, String)> = vec![
+        ("title", title.to_string()),
+        ("price_sats", price_sats.to_string()),
+        ("format", format.to_string()),
+    ];
+    if let Some(floor) = floor_sats {
+        query.push(("floor_sats", floor.to_string()));
+    }
+
+    let client = reqwest::Client::new();
+    let response = client
+        .put(&auth_url)
+        .query(&query)
+        .header("Authorization", format!("Nostr {}", auth))
+        .header("Content-Type", "application/octet-stream")
+        .body(bytes)
+        .send()
+        .await
+        .map_err(|e| format!("Artifact upload request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Artifact upload failed ({}): {}", status, body));
+    }
+
+    log::info!("Artifact '{}' uploaded to seller daemon {}", slug, base);
+    Ok(())
+}
+
 /// Upload a file to the Blossom server
 pub async fn upload_to_blossom(
     file_path: &Path,
