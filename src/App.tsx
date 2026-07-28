@@ -10,7 +10,7 @@ import { PlayerBar } from "./components/player/PlayerBar";
 import { usePlayback } from "./hooks/usePlayback";
 import { useStreaming } from "./hooks/useStreaming";
 import type { LibraryTrack } from "./components/library";
-import type { IdentityInfo, CatalogItem } from "./types/streaming";
+import type { IdentityInfo, CatalogItem, ProductInfo } from "./types/streaming";
 import "./globals.css";
 
 // ─── Views ──────────────────────────────────────────────────
@@ -101,6 +101,22 @@ function App() {
       const catalog = await invoke<CatalogItem[]>("load_catalog");
       console.log(`Catalog loaded: ${catalog.length} tracks`);
 
+      // Product listings for the catalog's artists — joined to tracks by
+      // artist pubkey + slug so priced tracks grow a buy chip
+      const authors = [...new Set(catalog.map((t) => t.artistPubkey))];
+      let productByKey = new Map<string, ProductInfo>();
+      try {
+        const products = await invoke<ProductInfo[]>("products_fetch", { authors });
+        productByKey = new Map(
+          products
+            .filter((p) => p.product_type === "track" && p.track_refs[0])
+            .map((p) => [`${p.artist_pubkey}:${p.track_refs[0].split(":")[2]}`, p])
+        );
+        console.log(`Products loaded: ${products.length}`);
+      } catch (e) {
+        console.warn("Product fetch failed (catalog still loads):", e);
+      }
+
       setTracks(catalog.map(t => ({
         title: t.title,
         artist: t.artistName || t.artistNpub.slice(0, 12) + "...",
@@ -112,9 +128,11 @@ function App() {
         artworkDataUrl: t.imageUrl || t.artistPicture || null,
         eventId: t.eventId,
         artistPubkey: t.artistPubkey,
+        slug: t.slug,
         audioUrl: t.audioUrl,
         lightningNodeId: t.lightningNodeId,
         artistDirect: true,
+        product: productByKey.get(`${t.artistPubkey}:${t.slug}`) ?? null,
       })));
     } catch (e) {
       console.error("Catalog load failed:", e);

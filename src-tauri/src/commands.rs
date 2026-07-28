@@ -1,7 +1,7 @@
 // Lightning FM — Tauri commands
 // Callable from the React frontend via invoke().
 
-use tauri::{State, AppHandle, Manager};
+use tauri::{State, AppHandle, Manager, Emitter};
 use crate::node::{LdkState, NodeInfo, NodeConfig, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
 use crate::relay::{RelayState, TrackInfo, ProfileData};
@@ -1301,6 +1301,180 @@ pub async fn product_upload_artifact(
         floor_sats,
         &format,
     ).await
+}
+
+/// Fetch active product listings for the catalog's artists (buyer browse).
+#[tauri::command]
+pub async fn products_fetch(
+    authors: Vec<String>,
+    relay_state: State<'_, RelayState>,
+) -> Result<Vec<crate::products::ProductInfo>, String> {
+    let pubkeys: Vec<nostr_sdk::PublicKey> = authors
+        .iter()
+        .filter_map(|a| a.parse().ok())
+        .collect();
+
+    let client_lock = relay_state.client.lock().await;
+    let client = client_lock.as_ref()
+        .ok_or("Not connected to relays. Call relay_connect first.")?;
+    crate::products::fetch_products_for_authors(client, pubkeys).await
+}
+
+#[derive(serde::Deserialize)]
+struct SellerInvoice {
+    bolt11: String,
+    payment_hash: String,
+    amount_sats: u64,
+    claim_token: Option<String>,
+}
+
+fn emit_purchase_progress(app: &AppHandle, stage: &str, detail: String) {
+    let _ = app.emit("purchase-progress", serde_json::json!({
+        "stage": stage,
+        "detail": detail,
+    }));
+}
+
+/// One-click purchase: invoice from the artist's daemon → pay from the
+/// embedded node → preimage from the payment store → download the artifact.
+/// Emits "purchase-progress" events; returns the recorded purchase.
+#[tauri::command]
+pub async fn purchase_execute(
+    endpoint: String,
+    slug: String,
+    title: String,
+    artist_pubkey: String,
+    format: Option<String>,
+    ldk_state: State<'_, LdkState>,
+    purchases_state: State<'_, crate::purchases::PurchasesState>,
+    app: AppHandle,
+) -> Result<crate::purchases::PurchaseRecord, String> {
+    let base = endpoint.trim_end_matches('/').to_string();
+
+    // 1. Invoice from the seller daemon
+    emit_purchase_progress(&app, "request", format!("{} · requesting invoice", title));
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(format!("{}/products/{}/invoice", base, slug))
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|e| format!("Artist node unreachable: {e}"))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Invoice refused: {body}"));
+    }
+    let invoice: SellerInvoice = resp
+        .json()
+        .await
+        .map_err(|e| format!("Bad invoice response: {e}"))?;
+    emit_purchase_progress(
+        &app,
+        "invoice",
+        format!("{} sats · paying from node balance", invoice.amount_sats),
+    );
+
+    // 2. Pay from the embedded node
+    let node = {
+        let node_lock = ldk_state.node.lock().map_err(|e| e.to_string())?;
+        node_lock.as_ref().ok_or("Node is not running")?.clone()
+    };
+    let bolt11: ldk_node::lightning_invoice::Bolt11Invoice = invoice
+        .bolt11
+        .parse()
+        .map_err(|e| format!("Invalid invoice from seller: {e:?}"))?;
+
+    let pay_node = node.clone();
+    let payment_id = tokio::task::spawn_blocking(move || {
+        pay_node
+            .bolt11_payment()
+            .send(&bolt11, None)
+            .map_err(|e| format!("Payment failed: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Payment task failed: {e}"))??;
+
+    // 3. Wait for settlement; the preimage is our receipt
+    let wait_node = node.clone();
+    let preimage = tokio::task::spawn_blocking(move || {
+        for _ in 0..240 {
+            if let Some(details) = wait_node.payment(&payment_id) {
+                match details.status {
+                    ldk_node::payment::PaymentStatus::Succeeded => {
+                        if let ldk_node::payment::PaymentKind::Bolt11 {
+                            preimage: Some(p), ..
+                        } = details.kind
+                        {
+                            return Ok(hex::encode(p.0));
+                        }
+                    }
+                    ldk_node::payment::PaymentStatus::Failed => {
+                        return Err("Payment failed — no route or seller offline".to_string());
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        Err("Payment not settled after 2 minutes".to_string())
+    })
+    .await
+    .map_err(|e| format!("Settlement task failed: {e}"))??;
+
+    emit_purchase_progress(&app, "settled", "payment confirmed · downloading".to_string());
+
+    // 4. Download the artifact with the preimage
+    let dl = http
+        .get(format!(
+            "{}/products/{}/download?preimage={}",
+            base, slug, preimage
+        ))
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {e}"))?;
+    if !dl.status().is_success() {
+        return Err(format!("Download refused ({})", dl.status()));
+    }
+    let bytes = dl
+        .bytes()
+        .await
+        .map_err(|e| format!("Download stream failed: {e}"))?;
+
+    let dir = crate::purchases::purchases_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create purchases dir: {e}"))?;
+    let ext = format.clone().unwrap_or_else(|| "bin".to_string());
+    let file_path = dir.join(format!("{}.{}", slug, ext));
+    std::fs::write(&file_path, &bytes).map_err(|e| format!("Failed to save artifact: {e}"))?;
+
+    // 5. Record it
+    let record = crate::purchases::PurchaseRecord {
+        slug,
+        title,
+        artist_pubkey,
+        endpoint: base,
+        amount_sats: invoice.amount_sats,
+        payment_hash: invoice.payment_hash,
+        preimage,
+        claim_token: invoice.claim_token,
+        format,
+        file_path: file_path.to_string_lossy().to_string(),
+        purchased_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    };
+    crate::purchases::record_purchase(&purchases_state, record.clone())?;
+    emit_purchase_progress(&app, "delivered", format!("{} bytes saved", bytes.len()));
+
+    Ok(record)
+}
+
+/// List past purchases, newest first.
+#[tauri::command]
+pub fn purchases_list(
+    purchases_state: State<'_, crate::purchases::PurchasesState>,
+) -> Result<Vec<crate::purchases::PurchaseRecord>, String> {
+    crate::purchases::list_purchases(&purchases_state)
 }
 
 /// Activate or deactivate a listing by slug — republishes the same product

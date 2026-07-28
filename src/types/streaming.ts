@@ -47,6 +47,40 @@ export interface CatalogItem {
   createdAt: number;
 }
 
+// Product listing (kind 30402) as returned by products_fetch — Rust ProductInfo
+export interface ProductInfo {
+  event_id: string;
+  artist_pubkey: string;
+  slug: string;
+  title: string;
+  summary: string | null;
+  description: string | null;
+  price_sats: number;
+  floor_sats: number | null;
+  product_type: string;
+  format: string | null;
+  image_url: string | null;
+  track_refs: string[];
+  endpoint: string;
+  status: string;
+  created_at: number;
+}
+
+// A completed purchase — Rust PurchaseRecord
+export interface PurchaseRecord {
+  slug: string;
+  title: string;
+  artist_pubkey: string;
+  endpoint: string;
+  amount_sats: number;
+  payment_hash: string;
+  preimage: string;
+  claim_token: string | null;
+  format: string | null;
+  file_path: string;
+  purchased_at: number;
+}
+
 export interface IdentityInfo {
   npub: string;
   pubkey_hex: string;

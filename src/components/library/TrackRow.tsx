@@ -10,6 +10,7 @@ interface TrackRowProps {
   showArtist?: boolean;
   showArtwork?: boolean;
   onPlay: (track: LibraryTrack) => void;
+  onBuy?: (track: LibraryTrack) => void;
 }
 
 function formatDuration(secs: number): string {
@@ -27,6 +28,7 @@ export function TrackRow({
   showArtist = true,
   showArtwork = false,
   onPlay,
+  onBuy,
 }: TrackRowProps) {
   return (
     <div
@@ -80,6 +82,19 @@ export function TrackRow({
           </div>
         )}
       </div>
+
+      {/* Buy chip — present only when the artist sells this track */}
+      {track.product && onBuy && (
+        <button
+          className="h-6 px-2 border border-amber/60 text-amber font-label-mono text-[10px] uppercase tracking-wider hover:bg-amber/10 hover:border-amber transition-all tabular-nums shrink-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            onBuy(track);
+          }}
+        >
+          {track.product.price_sats.toLocaleString()} sats
+        </button>
+      )}
 
       {/* Duration */}
       <span className="font-small text-muted-foreground tabular-nums shrink-0">

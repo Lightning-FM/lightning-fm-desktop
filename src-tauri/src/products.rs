@@ -165,6 +165,31 @@ pub async fn publish_product(
     Ok(event_id)
 }
 
+/// Fetch active product listings for a set of artists (buyer-side browse).
+pub async fn fetch_products_for_authors(
+    client: &Client,
+    authors: Vec<PublicKey>,
+) -> Result<Vec<ProductInfo>, String> {
+    if authors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let filter = Filter::new()
+        .kind(Kind::Custom(KIND_PRODUCT))
+        .authors(authors)
+        .limit(500);
+
+    let events = client
+        .fetch_events(filter, std::time::Duration::from_secs(5))
+        .await
+        .map_err(|e| format!("Failed to fetch products: {e}"))?;
+
+    Ok(events
+        .iter()
+        .filter_map(parse_product_event)
+        .filter(|p| p.status == "active")
+        .collect())
+}
+
 /// Fetch the signed-in artist's own product listings.
 pub async fn fetch_my_products(
     client: &Client,

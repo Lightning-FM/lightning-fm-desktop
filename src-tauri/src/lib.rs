@@ -4,6 +4,7 @@ mod node;
 mod identity;
 mod relay;
 mod products;
+mod purchases;
 mod upload;
 mod playback;
 mod credits;
@@ -32,6 +33,8 @@ use commands::{
     upload_track,
     // Products (downloads for sale)
     product_publish, product_list_mine, product_set_status, product_upload_artifact,
+    // Buying (desktop buyer)
+    products_fetch, purchase_execute, purchases_list,
     // Metadata & waveform
     metadata_read, metadata_write, artwork_extract, waveform_generate,
     // Withdrawals & invoices
@@ -56,6 +59,7 @@ pub fn run() {
         .manage(RelayState::new())
         .manage(CreditsState::new())
         .manage(StreamingState::new())
+        .manage(purchases::PurchasesState::new())
         .invoke_handler(tauri::generate_handler![
             // LDK node
             ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address, ldk_get_mnemonic,
@@ -69,6 +73,8 @@ pub fn run() {
             upload_track,
             // Products (downloads for sale)
             product_publish, product_list_mine, product_set_status, product_upload_artifact,
+            // Buying (desktop buyer)
+            products_fetch, purchase_execute, purchases_list,
             // Metadata & waveform
             metadata_read, metadata_write, artwork_extract, waveform_generate,
             // Withdrawals & invoices

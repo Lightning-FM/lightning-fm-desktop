@@ -12,6 +12,8 @@ import type {
 import { TrackRow } from "./TrackRow";
 import { ArtistCard } from "./ArtistCard";
 import { ArtistDetail } from "./ArtistDetail";
+import { BuyModal } from "../store/BuyModal";
+import { PurchasesView } from "../store/PurchasesView";
 
 interface LibraryViewProps {
   tracks: LibraryTrack[];
@@ -37,6 +39,7 @@ export function LibraryView({
   const [selectedArtist, setSelectedArtist] = useState<ArtistGroup | null>(
     null
   );
+  const [buying, setBuying] = useState<LibraryTrack | null>(null);
 
   // Filter tracks by search
   const filtered = useMemo(() => {
@@ -192,12 +195,22 @@ export function LibraryView({
           <button
             className={`h-6 px-2 font-label-mono text-[10px] uppercase tracking-wider transition-all ${
               viewMode === "artists"
-                ? "bg-amber/10 text-amber"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-amber/10 text-amber border-r border-border"
+                : "text-muted-foreground hover:text-foreground border-r border-border"
             }`}
             onClick={() => setViewMode("artists")}
           >
             Artists
+          </button>
+          <button
+            className={`h-6 px-2 font-label-mono text-[10px] uppercase tracking-wider transition-all ${
+              viewMode === "purchases"
+                ? "bg-amber/10 text-amber"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setViewMode("purchases")}
+          >
+            Purchases
           </button>
         </div>
 
@@ -220,7 +233,9 @@ export function LibraryView({
       </div>
 
       {/* Content */}
-      {viewMode === "tracks" ? (
+      {viewMode === "purchases" ? (
+        <PurchasesView />
+      ) : viewMode === "tracks" ? (
         <div className="flex-1 flex flex-col min-h-0">
           {/* Column headers (sortable) */}
           <div className="shrink-0 flex items-center gap-3 px-3 py-1 border-b border-border">
@@ -263,6 +278,7 @@ export function LibraryView({
                   showArtist={true}
                   showArtwork={true}
                   onPlay={onPlay}
+                  onBuy={setBuying}
                 />
               ))
             )}
@@ -289,6 +305,18 @@ export function LibraryView({
             </div>
           )}
         </div>
+      )}
+
+      {/* Checkout */}
+      {buying?.product && (
+        <BuyModal
+          product={buying.product}
+          artistName={buying.artist}
+          onClose={() => setBuying(null)}
+          onPurchased={() => {
+            /* record lands in purchases_list; the Purchases tab reloads on open */
+          }}
+        />
       )}
     </div>
   );
