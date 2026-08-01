@@ -1,17 +1,30 @@
 // Drop zone for audio files and folders
-// Supports drag-and-drop + browse buttons
+// Selection goes through the Tauri dialog plugin and the webview drag-drop
+// event — both yield real filesystem paths. The browser File API does not
+// expose paths under Tauri v2, and the Rust side needs a path to read.
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 interface DropZoneProps {
   isDraggingOver: boolean;
   onDragOver: () => void;
   onDragLeave: () => void;
-  onFilesSelected: (files: FileList) => void;
+  onFilesSelected: (paths: string[]) => void;
 }
 
-const ACCEPTED_MIME =
-  "audio/wav,audio/flac,audio/aiff,audio/mpeg,audio/ogg,audio/mp4,audio/aac,audio/opus";
+const AUDIO_EXTENSIONS = [
+  "wav",
+  "flac",
+  "aiff",
+  "aif",
+  "mp3",
+  "ogg",
+  "m4a",
+  "aac",
+  "opus",
+];
 
 export function DropZone({
   isDraggingOver,
@@ -19,39 +32,42 @@ export function DropZone({
   onDragLeave,
   onFilesSelected,
 }: DropZoneProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  const browseFiles = useCallback(async () => {
+    const selected = await open({
+      multiple: true,
+      directory: false,
+      filters: [{ name: "Audio", extensions: AUDIO_EXTENSIONS }],
+    });
+    if (!selected) return;
+    onFilesSelected(Array.isArray(selected) ? selected : [selected]);
+  }, [onFilesSelected]);
 
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onDragOver();
-    },
-    [onDragOver]
-  );
+  const browseFolder = useCallback(async () => {
+    const selected = await open({ multiple: false, directory: true });
+    if (typeof selected === "string") onFilesSelected([selected]);
+  }, [onFilesSelected]);
 
-  const handleDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onDragLeave();
-    },
-    [onDragLeave]
-  );
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onDragLeave();
-
-      if (e.dataTransfer.files.length > 0) {
-        onFilesSelected(e.dataTransfer.files);
-      }
-    },
-    [onDragLeave, onFilesSelected]
-  );
+  // Native drag-drop — the DOM drop event carries no paths under Tauri v2
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "over") {
+          onDragOver();
+        } else if (event.payload.type === "drop") {
+          onDragLeave();
+          if (event.payload.paths.length > 0) {
+            onFilesSelected(event.payload.paths);
+          }
+        } else {
+          onDragLeave();
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => unlisten?.();
+  }, [onDragOver, onDragLeave, onFilesSelected]);
 
   return (
     <div className="flex flex-col items-center justify-center flex-1 p-8">
@@ -62,9 +78,6 @@ export function DropZone({
             ? "border-amber bg-[rgba(232,169,23,0.08)]"
             : "border-border hover:border-[var(--text-muted)]"
         }`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         {/* Icon */}
         <div className="font-display text-amber opacity-60">↑</div>
@@ -86,13 +99,13 @@ export function DropZone({
         <div className="flex gap-4">
           <button
             className="h-8 px-4 border border-amber text-amber font-label-mono uppercase tracking-wider hover:bg-amber/10 transition-all"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={browseFiles}
           >
             Browse Files
           </button>
           <button
             className="h-8 px-4 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider hover:border-[var(--text-muted)] hover:text-foreground transition-all"
-            onClick={() => folderInputRef.current?.click()}
+            onClick={browseFolder}
           >
             Browse Folder
           </button>
@@ -105,24 +118,6 @@ export function DropZone({
           <span className="border border-border px-1">⌘⇧O</span> folder
         </div>
       </div>
-
-      {/* Hidden file inputs */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept={ACCEPTED_MIME}
-        className="hidden"
-        onChange={(e) => e.target.files && onFilesSelected(e.target.files)}
-      />
-      <input
-        ref={folderInputRef}
-        type="file"
-        // @ts-expect-error — webkitdirectory is not in TS types
-        webkitdirectory=""
-        className="hidden"
-        onChange={(e) => e.target.files && onFilesSelected(e.target.files)}
-      />
     </div>
   );
 }

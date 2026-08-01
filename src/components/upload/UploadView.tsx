@@ -3,6 +3,7 @@
 
 import { useReducer, useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { UploadTrack } from "./types";
 import { uploadReducer, initialUploadState } from "./reducer";
 import { DropZone } from "./DropZone";
@@ -124,34 +125,23 @@ export function UploadView() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [state.selectedTrackIds, state.tracks]);
 
-  // Handle files selected via drop or browse
-  const handleFilesSelected = useCallback((files: FileList) => {
-    const audioFiles = Array.from(files).filter((f) => {
-      const ext = f.name.split(".").pop()?.toLowerCase() || "";
-      return [
-        "wav",
-        "flac",
-        "aiff",
-        "aif",
-        "mp3",
-        "ogg",
-        "m4a",
-        "aac",
-        "opus",
-      ].includes(ext);
-    });
+  // Handle files selected via drop or browse.
+  // Paths come from the Tauri dialog / drag-drop event — real filesystem
+  // paths, since the Rust side reads the file directly.
+  const handleFilesSelected = useCallback(async (paths: string[]) => {
+    // Directories are expanded to the audio files they contain
+    const expanded = await invoke<string[]>("expand_audio_paths", { paths });
+    if (expanded.length === 0) return;
 
-    if (audioFiles.length === 0) return;
-
-    const newTracks: UploadTrack[] = audioFiles.map((file, index) => {
-      const ext = file.name.split(".").pop() || "";
-      const nameWithoutExt = file.name.replace(/\.[^.]+$/, "");
+    const newTracks: UploadTrack[] = expanded.map((filePath, index) => {
+      const fileName = filePath.split("/").pop() || filePath;
+      const ext = fileName.split(".").pop() || "";
+      const nameWithoutExt = fileName.replace(/\.[^.]+$/, "");
 
       return {
         id: genId(),
-        // webkitRelativePath gives the full path for folder drops
-        filePath: (file as File & { path?: string }).path || file.name,
-        fileName: file.name,
+        filePath,
+        fileName,
 
         // Defaults — will be overwritten by ID3 tag reading
         title: nameWithoutExt,
@@ -172,7 +162,7 @@ export function UploadView() {
         format: extensionToFormat(ext),
         bitDepth: null,
         sampleRate: null,
-        fileSize: file.size,
+        fileSize: 0, // filled in by metadata_read
 
         // Artwork
         artworkPath: null,
@@ -676,15 +666,31 @@ export function UploadView() {
           className="h-7 px-3 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider hover:border-[var(--text-muted)] hover:text-foreground transition-all text-[11px]"
           disabled={publishingInProgress}
           onClick={() => {
-            const input = document.createElement("input");
-            input.type = "file";
-            input.multiple = true;
-            input.accept =
-              "audio/wav,audio/flac,audio/aiff,audio/mpeg,audio/ogg,audio/mp4,audio/aac,audio/opus";
-            input.onchange = () => {
-              if (input.files) handleFilesSelected(input.files);
-            };
-            input.click();
+            open({
+              multiple: true,
+              directory: false,
+              filters: [
+                {
+                  name: "Audio",
+                  extensions: [
+                    "wav",
+                    "flac",
+                    "aiff",
+                    "aif",
+                    "mp3",
+                    "ogg",
+                    "m4a",
+                    "aac",
+                    "opus",
+                  ],
+                },
+              ],
+            }).then((selected) => {
+              if (!selected) return;
+              handleFilesSelected(
+                Array.isArray(selected) ? selected : [selected]
+              );
+            });
           }}
         >
           + Add Files

@@ -344,6 +344,7 @@ pub async fn profile_set(
     about: Option<String>,
     picture: Option<String>,
     lud16: Option<String>,
+    nip05: Option<String>,
     relay_state: State<'_, RelayState>,
 ) -> Result<ProfileData, String> {
     let client_lock = relay_state.client.lock().await;
@@ -356,7 +357,7 @@ pub async fn profile_set(
         about,
         picture,
         lud16,
-        nip05: None, // managed separately
+        nip05,
     };
 
     // Publish kind 0 (merges with existing) and kind 10002 (relay list)
@@ -395,6 +396,26 @@ pub async fn upload_track(
     // Upload to Blossom
     let upload = crate::upload::upload_to_blossom(path, &keys).await?;
 
+    // Embedded cover art rides along to Blossom so the event can reference a
+    // real URL. A missing or unreadable picture is not fatal — the track
+    // publishes without artwork rather than failing the upload.
+    let image_url = match crate::metadata::extract_artwork_raw(path) {
+        Ok(Some((bytes, mime))) => {
+            match crate::upload::upload_bytes_to_blossom(bytes, mime, &keys).await {
+                Ok(art) => Some(art.url),
+                Err(e) => {
+                    log::warn!("Artwork upload failed, publishing without it: {}", e);
+                    None
+                }
+            }
+        }
+        Ok(None) => None,
+        Err(e) => {
+            log::warn!("Could not read artwork from {}: {}", file_path, e);
+            None
+        }
+    };
+
     // Publish kind 31337 to relays
     let client_lock = relay_state.client.lock().await;
     let client = client_lock.as_ref()
@@ -418,7 +439,7 @@ pub async fn upload_track(
         upload.size,
         preview_secs,
         lightning_node_id.as_deref(),
-        None, // image_url — not yet supported in upload flow
+        image_url.as_deref(),
     ).await?;
 
     Ok(TrackInfo {
@@ -435,7 +456,7 @@ pub async fn upload_track(
         file_size: Some(upload.size),
         preview_secs,
         lightning_node_id,
-        image_url: None,
+        image_url,
         created_at: nostr_sdk::Timestamp::now().as_u64(),
     })
 }
@@ -963,6 +984,47 @@ pub fn metadata_read(file_path: String) -> Result<crate::metadata::AudioMetadata
         return Err(format!("File not found: {}", file_path));
     }
     crate::metadata::read_metadata(path)
+}
+
+/// Audio extensions the upload flow accepts.
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "wav", "flac", "aiff", "aif", "mp3", "ogg", "m4a", "aac", "opus",
+];
+
+fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// Expand a selection of files and/or directories into a flat list of audio
+/// file paths. Directories are walked one level deep (an album folder);
+/// non-audio files are dropped. Order is stable so track numbering is
+/// predictable.
+#[tauri::command]
+pub fn expand_audio_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    let mut files: Vec<String> = Vec::new();
+
+    for raw in paths {
+        let path = Path::new(&raw);
+        if path.is_dir() {
+            let entries = std::fs::read_dir(path)
+                .map_err(|e| format!("Could not read folder {}: {}", raw, e))?;
+            let mut in_dir: Vec<String> = entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|p| p.is_file() && is_audio_file(p))
+                .filter_map(|p| p.to_str().map(|s| s.to_string()))
+                .collect();
+            in_dir.sort();
+            files.extend(in_dir);
+        } else if path.is_file() && is_audio_file(path) {
+            files.push(raw);
+        }
+    }
+
+    Ok(files)
 }
 
 /// Write metadata back to an audio file's tags.

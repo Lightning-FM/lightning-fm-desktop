@@ -160,16 +160,29 @@ pub async fn upload_to_blossom(
     file_path: &Path,
     keys: &Keys,
 ) -> Result<UploadResult, String> {
-    let blossom_server = get_blossom_server();
-    let (sha256, size) = hash_file(file_path)?;
     let mime_type = detect_mime(file_path);
+    let bytes = std::fs::read(file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    upload_bytes_to_blossom(bytes, mime_type, keys).await
+}
+
+/// Upload raw bytes to the Blossom server. Used for audio files read from
+/// disk and for artwork extracted out of their tags.
+pub async fn upload_bytes_to_blossom(
+    bytes: Vec<u8>,
+    mime_type: String,
+    keys: &Keys,
+) -> Result<UploadResult, String> {
+    let blossom_server = get_blossom_server();
+    let size = bytes.len() as u64;
+
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let sha256 = format!("{:x}", hasher.finalize());
 
     // Create signed Blossom auth
     let auth_token = create_blossom_auth(keys, &sha256, size).await?;
-
-    // Read file bytes
-    let bytes = std::fs::read(file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
 
     // Upload via HTTP PUT
     let client = reqwest::Client::new();
@@ -177,6 +190,9 @@ pub async fn upload_to_blossom(
         .put(format!("{}/upload", blossom_server))
         .header("Authorization", format!("Nostr {}", auth_token))
         .header("Content-Type", &mime_type)
+        // BUD-11: servers require the hash up front and match it against the
+        // auth event's x tag before reading the body.
+        .header("X-SHA-256", &sha256)
         .body(bytes)
         .send()
         .await
@@ -189,7 +205,7 @@ pub async fn upload_to_blossom(
     }
 
     let url = format!("{}/{}", blossom_server, sha256);
-    log::info!("Uploaded {} to {}", file_path.display(), url);
+    log::info!("Uploaded {} bytes ({}) to {}", size, mime_type, url);
 
     Ok(UploadResult {
         sha256,

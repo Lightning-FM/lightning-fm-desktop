@@ -4,6 +4,7 @@ import { UploadView } from "./components/upload";
 import { LibraryView } from "./components/library";
 import { PaymentNotification } from "./components/PaymentNotification";
 import { DashboardView } from "./components/dashboard";
+import { SettingsView } from "./components/settings/SettingsView";
 import { OnboardingView } from "./components/onboarding";
 import { StatusBar } from "./components/StatusBar";
 import { PlayerBar } from "./components/player/PlayerBar";
@@ -231,6 +232,8 @@ function App() {
             />
           ) : view === "dashboard" ? (
             <DashboardView />
+          ) : view === "settings" && identity ? (
+            <SettingsView npub={identity.npub} />
           ) : (
             <div className="flex items-center justify-center h-full">
               <span className="font-body-mono text-muted-foreground">

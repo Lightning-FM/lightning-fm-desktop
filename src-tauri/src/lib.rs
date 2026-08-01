@@ -36,7 +36,7 @@ use commands::{
     // Buying (desktop buyer)
     products_fetch, purchase_execute, purchases_list,
     // Metadata & waveform
-    metadata_read, metadata_write, artwork_extract, waveform_generate,
+    metadata_read, metadata_write, artwork_extract, waveform_generate, expand_audio_paths,
     // Withdrawals & invoices
     withdraw_lightning, withdraw_onchain, ldk_create_invoice,
     // Channel management
@@ -54,6 +54,7 @@ use commands::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(LdkState::new())
         .manage(IdentityState::new())
         .manage(RelayState::new())
@@ -76,7 +77,7 @@ pub fn run() {
             // Buying (desktop buyer)
             products_fetch, purchase_execute, purchases_list,
             // Metadata & waveform
-            metadata_read, metadata_write, artwork_extract, waveform_generate,
+            metadata_read, metadata_write, artwork_extract, waveform_generate, expand_audio_paths,
             // Withdrawals & invoices
             withdraw_lightning, withdraw_onchain, ldk_create_invoice,
             // Channel management

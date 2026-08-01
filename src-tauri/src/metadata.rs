@@ -147,6 +147,37 @@ pub fn write_metadata(path: &Path, metadata: &MetadataWrite) -> Result<(), Strin
     Ok(())
 }
 
+/// Extract embedded artwork as raw bytes plus its MIME type.
+/// Used at publish time so the cover art can go to Blossom alongside the
+/// audio; the UI path uses `extract_artwork` for a displayable data URL.
+pub fn extract_artwork_raw(path: &Path) -> Result<Option<(Vec<u8>, String)>, String> {
+    let tagged_file = lofty::read_from_path(path)
+        .map_err(|e| format!("Failed to read audio file: {}", e))?;
+
+    let tag = match tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+
+    let picture = tag
+        .pictures()
+        .iter()
+        .find(|p| p.pic_type() == PictureType::CoverFront)
+        .or_else(|| tag.pictures().first());
+
+    let picture = match picture {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let mime = picture
+        .mime_type()
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "image/jpeg".to_string());
+
+    Ok(Some((picture.data().to_vec(), mime)))
+}
+
 /// Extract embedded artwork as a base64 data URL
 pub fn extract_artwork(path: &Path) -> Result<Option<ExtractedArtwork>, String> {
     let tagged_file = lofty::read_from_path(path)

@@ -1,6 +1,6 @@
 // Center pane — metadata editing form for the selected track
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { UploadTrack } from "./types";
 import { Waveform } from "./Waveform";
 
@@ -43,6 +43,13 @@ export function TrackDetail({
 }: TrackDetailProps) {
   const [showCredits, setShowCredits] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [tagsText, setTagsText] = useState(track.tags.join(", "));
+
+  // Reseed the tag text when a different track is selected
+  useEffect(() => {
+    setTagsText(track.tags.join(", "));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track.id]);
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -116,19 +123,21 @@ export function TrackDetail({
           </select>
         </Field>
 
-        {/* Tags */}
+        {/* Tags — the raw text is held locally so separators survive typing;
+            round-tripping through the parsed array would eat the comma. */}
         <Field label="Tags" hint="Comma-separated — drives discovery">
           <input
             type="text"
-            value={track.tags.join(", ")}
-            onChange={(e) =>
+            value={tagsText}
+            onChange={(e) => {
+              setTagsText(e.target.value);
               onUpdate({
                 tags: e.target.value
                   .split(",")
                   .map((t) => t.trim())
                   .filter(Boolean),
-              })
-            }
+              });
+            }}
             placeholder="ambient, drone, dark, instrumental..."
             className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors"
           />
