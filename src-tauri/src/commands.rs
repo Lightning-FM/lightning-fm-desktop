@@ -1365,6 +1365,35 @@ pub async fn product_upload_artifact(
     ).await
 }
 
+/// Upload the purchasable artifact to the hosted gate (Option 3 free
+/// tier) and register the product there — no artist node involved.
+/// Returns the gate endpoint for the listing's `endpoint` tag.
+#[tauri::command]
+pub async fn product_upload_artifact_gate(
+    file_path: String,
+    slug: String,
+    title: String,
+    price_sats: u64,
+    floor_sats: Option<u64>,
+    format: String,
+    identity_state: State<'_, IdentityState>,
+) -> Result<String, String> {
+    let keys = identity_state.keys.lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .ok_or("No identity. Create or import one first.")?;
+
+    crate::upload::upload_artifact_to_gate(
+        std::path::Path::new(&file_path),
+        &keys,
+        &slug,
+        &title,
+        price_sats,
+        floor_sats,
+        &format,
+    ).await
+}
+
 /// Fetch active product listings for the catalog's artists (buyer browse).
 #[tauri::command]
 pub async fn products_fetch(

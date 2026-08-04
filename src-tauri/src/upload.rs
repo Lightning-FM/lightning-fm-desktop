@@ -90,6 +90,149 @@ pub async fn create_blossom_auth(
     Ok(encoded)
 }
 
+/// Hosted purchase gate by environment (Option 3 free tier).
+/// Set LFM_gate_server to override.
+pub fn get_gate_server() -> String {
+    if let Ok(server) = std::env::var("LFM_gate_server") {
+        return server;
+    }
+    if std::env::var("LFM_ENV").as_deref() == Ok("production") {
+        return "https://lightning.fm/api/gate".to_string();
+    }
+    // Local dev — the marketing site's dev server
+    "http://localhost:3020/api/gate".to_string()
+}
+
+/// Sign a NIP-98 (kind 27235) auth header for a gate request. The gate
+/// binds the payload tag to sha256 of the exact body string sent.
+fn nip98_header(
+    keys: &Keys,
+    url: &str,
+    method: &str,
+    payload_sha256: Option<String>,
+) -> Result<String, String> {
+    let mut tags = vec![
+        Tag::custom(TagKind::custom("u"), vec![url.to_string()]),
+        Tag::custom(TagKind::custom("method"), vec![method.to_string()]),
+    ];
+    if let Some(hash) = payload_sha256 {
+        tags.push(Tag::custom(TagKind::custom("payload"), vec![hash]));
+    }
+    let event = EventBuilder::new(Kind::HttpAuth, "")
+        .tags(tags)
+        .sign_with_keys(keys)
+        .map_err(|e| format!("Failed to sign NIP-98 event: {}", e))?;
+    let event_json = serde_json::to_string(&event)
+        .map_err(|e| format!("Failed to serialize NIP-98 event: {}", e))?;
+    Ok(format!(
+        "Nostr {}",
+        base64::engine::general_purpose::STANDARD.encode(event_json.as_bytes())
+    ))
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    format!("{:x}", hasher.finalize())
+}
+
+async fn error_body(response: reqwest::Response) -> String {
+    let status = response.status();
+    // The gate's error strings are artist-facing — surface them verbatim.
+    let body = response.text().await.unwrap_or_default();
+    let msg = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from))
+        .unwrap_or(body);
+    format!("({}) {}", status, msg)
+}
+
+/// Sell through the hosted gate (Option 3): presigned upload of the
+/// artifact straight to Lightning FM's private storage, then product
+/// registration over NIP-98. The payout address is whatever lud16 the
+/// artist's Nostr profile carries — the gate accepts nothing else.
+/// Returns the gate endpoint for the listing's `endpoint` tag.
+pub async fn upload_artifact_to_gate(
+    file_path: &Path,
+    keys: &Keys,
+    slug: &str,
+    title: &str,
+    price_sats: u64,
+    floor_sats: Option<u64>,
+    format: &str,
+) -> Result<String, String> {
+    let base = get_gate_server().trim_end_matches('/').to_string();
+    let bytes = std::fs::read(file_path)
+        .map_err(|e| format!("Failed to read artifact: {}", e))?;
+    let sha256 = sha256_hex(&bytes);
+    let size_bytes = bytes.len() as u64;
+    let client = reqwest::Client::new();
+
+    // 1. Ask for a presigned upload slot (NIP-98 over the JSON body)
+    let uploads_url = format!("{}/uploads", base);
+    let upload_req = serde_json::json!({ "sha256": sha256, "size_bytes": size_bytes }).to_string();
+    let auth = nip98_header(keys, &uploads_url, "POST", Some(sha256_hex(upload_req.as_bytes())))?;
+    let response = client
+        .post(&uploads_url)
+        .header("Authorization", auth)
+        .header("Content-Type", "application/json")
+        .body(upload_req)
+        .send()
+        .await
+        .map_err(|e| format!("Gate upload request failed: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("Gate refused the upload {}", error_body(response).await));
+    }
+    #[derive(serde::Deserialize)]
+    struct UploadSlot {
+        upload_url: String,
+        artifact_url: String,
+    }
+    let slot: UploadSlot = response
+        .json()
+        .await
+        .map_err(|e| format!("Gate returned an invalid upload slot: {}", e))?;
+
+    // 2. Send the file straight to storage — the presigned URL is the auth
+    let response = client
+        .put(&slot.upload_url)
+        .header("Content-Type", "application/octet-stream")
+        .body(bytes)
+        .send()
+        .await
+        .map_err(|e| format!("Artifact upload failed: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("Storage rejected the artifact {}", error_body(response).await));
+    }
+
+    // 3. Register the product (NIP-98 over the JSON body)
+    let product_url = format!("{}/products/{}", base, slug);
+    let product_req = serde_json::json!({
+        "title": title,
+        "price_sats": price_sats,
+        "floor_sats": floor_sats,
+        "format": format,
+        "size_bytes": size_bytes,
+        "artifact_url": slot.artifact_url,
+    })
+    .to_string();
+    let auth = nip98_header(keys, &product_url, "PUT", Some(sha256_hex(product_req.as_bytes())))?;
+    let response = client
+        .put(&product_url)
+        .header("Authorization", auth)
+        .header("Content-Type", "application/json")
+        .body(product_req)
+        .send()
+        .await
+        .map_err(|e| format!("Product registration failed: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("Gate refused the product {}", error_body(response).await));
+    }
+
+    log::info!("Artifact '{}' registered with the hosted gate {}", slug, base);
+    Ok(base)
+}
+
 /// Upload a purchasable artifact (lossless file) to the artist's seller
 /// daemon, authenticated with NIP-98 (kind 27235). The daemon verifies the
 /// signer against its configured ARTIST_PUBKEY and the payload hash against
@@ -153,6 +296,39 @@ pub async fn upload_artifact_to_daemon(
 
     log::info!("Artifact '{}' uploaded to seller daemon {}", slug, base);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Cross-implementation check: our nostr-sdk-signed NIP-98 token must
+    /// verify against the production gate's nostr-tools-based verifier. A
+    /// throwaway key is valid but not allowlisted, so the expected result
+    /// is the allowlist 403 — reaching it proves auth verified.
+    /// Network test — run explicitly: cargo test gate_nip98 -- --ignored
+    #[test]
+    #[ignore]
+    fn gate_nip98_interop_against_production() {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        rt.block_on(async {
+            let keys = Keys::generate();
+            let tmp = std::env::temp_dir().join("lfm-gate-interop-test.bin");
+            std::fs::write(&tmp, b"interop test artifact").expect("write temp file");
+            std::env::set_var("LFM_gate_server", "https://lightning.fm/api/gate");
+
+            let err = upload_artifact_to_gate(
+                &tmp, &keys, "interop-test", "Interop Test", 100, None, "mp3",
+            )
+            .await
+            .expect_err("un-allowlisted key must be refused");
+
+            assert!(
+                err.contains("allowlist"),
+                "expected the allowlist refusal (proves NIP-98 verified), got: {err}"
+            );
+        });
+    }
 }
 
 /// Upload a file to the Blossom server

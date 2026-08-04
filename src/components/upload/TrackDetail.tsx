@@ -7,6 +7,8 @@ import { Waveform } from "./Waveform";
 interface TrackDetailProps {
   track: UploadTrack;
   onUpdate: (updates: Partial<UploadTrack>) => void;
+  sellVia: "gate" | "node";
+  onSellViaChange: (value: "gate" | "node") => void;
   sellerEndpoint: string;
   onSellerEndpointChange: (value: string) => void;
 }
@@ -38,6 +40,8 @@ const GENRES = [
 export function TrackDetail({
   track,
   onUpdate,
+  sellVia,
+  onSellViaChange,
   sellerEndpoint,
   onSellerEndpointChange,
 }: TrackDetailProps) {
@@ -244,18 +248,63 @@ export function TrackDetail({
                   </Field>
                 )}
               </div>
-              <Field
-                label="Seller endpoint"
-                hint="Your always-on node's URL — shared across all your listings"
-              >
-                <input
-                  type="text"
-                  value={sellerEndpoint}
-                  onChange={(e) => onSellerEndpointChange(e.target.value)}
-                  placeholder="https://node.yourdomain.com"
-                  className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors"
-                />
-              </Field>
+              <div className="flex flex-col gap-2">
+                <span className="font-label-mono text-secondary-foreground uppercase tracking-wider text-[11px]">
+                  Sell through
+                </span>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="sell-via"
+                    checked={sellVia === "gate"}
+                    onChange={() => onSellViaChange("gate")}
+                    className="w-4 h-4 mt-0.5 accent-amber"
+                  />
+                  <span className="flex flex-col">
+                    <span className="font-body-mono text-foreground text-[12px]">
+                      Lightning FM hosts it (free tier)
+                    </span>
+                    <span className="font-small text-muted-foreground">
+                      We store the file and gate delivery. Payments go straight
+                      to the Lightning address in your Nostr profile — never
+                      through us. Requires a wallet that supports payment
+                      verification (Coinos, Alby).
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="sell-via"
+                    checked={sellVia === "node"}
+                    onChange={() => onSellViaChange("node")}
+                    className="w-4 h-4 mt-0.5 accent-amber"
+                  />
+                  <span className="flex flex-col">
+                    <span className="font-body-mono text-foreground text-[12px]">
+                      My own node
+                    </span>
+                    <span className="font-small text-muted-foreground">
+                      Your always-on seller daemon holds the file and takes
+                      the payment. Full sovereignty.
+                    </span>
+                  </span>
+                </label>
+              </div>
+              {sellVia === "node" && (
+                <Field
+                  label="Seller endpoint"
+                  hint="Your always-on node's URL — shared across all your listings"
+                >
+                  <input
+                    type="text"
+                    value={sellerEndpoint}
+                    onChange={(e) => onSellerEndpointChange(e.target.value)}
+                    placeholder="https://node.yourdomain.com"
+                    className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors"
+                  />
+                </Field>
+              )}
             </div>
           )}
         </div>

@@ -77,10 +77,20 @@ export function UploadView() {
   const [sellerEndpoint, setSellerEndpoint] = useState(
     () => localStorage.getItem("lfm_seller_endpoint") || ""
   );
+  // How to sell: the hosted gate (free tier, no node) or the artist's own
+  // daemon. Gate is the default — running a node is the opt-in.
+  const [sellVia, setSellVia] = useState<"gate" | "node">(
+    () => (localStorage.getItem("lfm_sell_via") === "node" ? "node" : "gate")
+  );
 
   function handleSellerEndpointChange(value: string) {
     setSellerEndpoint(value);
     localStorage.setItem("lfm_seller_endpoint", value);
+  }
+
+  function handleSellViaChange(value: "gate" | "node") {
+    setSellVia(value);
+    localStorage.setItem("lfm_sell_via", value);
   }
 
   const selectedTrack = state.tracks.find((t) =>
@@ -390,22 +400,38 @@ export function UploadView() {
         // doesn't roll back the publish.
         if (track.sellEnabled) {
           try {
-            if (!sellerEndpoint.trim()) {
-              throw new Error(
-                "Seller endpoint not set — add your node URL in the Sell section"
-              );
-            }
             // Artifact first: the listing must never point at a product the
-            // daemon can't deliver
-            await invoke("product_upload_artifact", {
-              filePath: track.filePath,
-              slug: slugify(track.title),
-              title: track.title,
-              priceSats: track.priceSats,
-              floorSats: track.nameYourPrice ? track.floorSats : null,
-              format: track.format.toLowerCase(),
-              endpoint: sellerEndpoint.trim(),
-            });
+            // seller can't deliver
+            let productEndpoint: string;
+            if (sellVia === "gate") {
+              productEndpoint = await invoke<string>(
+                "product_upload_artifact_gate",
+                {
+                  filePath: track.filePath,
+                  slug: slugify(track.title),
+                  title: track.title,
+                  priceSats: track.priceSats,
+                  floorSats: track.nameYourPrice ? track.floorSats : null,
+                  format: track.format.toLowerCase(),
+                }
+              );
+            } else {
+              if (!sellerEndpoint.trim()) {
+                throw new Error(
+                  "Seller endpoint not set — add your node URL in the Sell section"
+                );
+              }
+              productEndpoint = sellerEndpoint.trim();
+              await invoke("product_upload_artifact", {
+                filePath: track.filePath,
+                slug: slugify(track.title),
+                title: track.title,
+                priceSats: track.priceSats,
+                floorSats: track.nameYourPrice ? track.floorSats : null,
+                format: track.format.toLowerCase(),
+                endpoint: productEndpoint,
+              });
+            }
             await invoke<string>("product_publish", {
               draft: {
                 slug: slugify(track.title),
@@ -420,7 +446,7 @@ export function UploadView() {
                 track_refs: [
                   `31337:${result.artist_pubkey}:${slugify(track.title)}`,
                 ],
-                endpoint: sellerEndpoint.trim(),
+                endpoint: productEndpoint,
               },
             });
           } catch (err) {
@@ -592,6 +618,8 @@ export function UploadView() {
                   updates,
                 })
               }
+              sellVia={sellVia}
+              onSellViaChange={handleSellViaChange}
               sellerEndpoint={sellerEndpoint}
               onSellerEndpointChange={handleSellerEndpointChange}
             />
