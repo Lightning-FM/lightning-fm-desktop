@@ -19,6 +19,14 @@ interface SettingsViewProps {
   npub: string;
 }
 
+interface WalletCheck {
+  ok: boolean;
+  lud16: string;
+  provider: string | null;
+  verify_supported: boolean;
+  error: string | null;
+}
+
 function Field({
   label,
   hint,
@@ -55,6 +63,11 @@ export function SettingsView({ npub }: SettingsViewProps) {
   );
   const [message, setMessage] = useState("");
   const [signOutArmed, setSignOutArmed] = useState(false);
+  // null = no check yet/not applicable; "checking" = probe in flight
+  const [walletCheck, setWalletCheck] = useState<WalletCheck | "checking" | null>(
+    null
+  );
+  const [walletCheckError, setWalletCheckError] = useState<string | null>(null);
 
   async function handleSignOut() {
     try {
@@ -99,6 +112,8 @@ export function SettingsView({ npub }: SettingsViewProps) {
 
     setStatus("saving");
     setMessage("");
+    setWalletCheck(null);
+    setWalletCheckError(null);
     try {
       await invoke("profile_set", {
         displayName: displayName.trim(),
@@ -113,6 +128,19 @@ export function SettingsView({ npub }: SettingsViewProps) {
     } catch (err) {
       setStatus("error");
       setMessage(String(err));
+      return;
+    }
+
+    // Feature-detect the payout address (Phase 4). The profile is already
+    // published — a failed check informs, it never unpublishes.
+    const address = lud16.trim();
+    if (!address) return;
+    setWalletCheck("checking");
+    try {
+      setWalletCheck(await invoke<WalletCheck>("wallet_check", { lud16: address }));
+    } catch (err) {
+      setWalletCheck(null);
+      setWalletCheckError(String(err));
     }
   }
 
@@ -166,14 +194,41 @@ export function SettingsView({ npub }: SettingsViewProps) {
             />
           </Field>
 
-          <Field label="Lightning Address" hint="for zaps — lud16">
+          <Field label="Lightning Address" hint="where your money goes — lud16">
             <input
               type="text"
               value={lud16}
               onChange={(e) => setLud16(e.target.value)}
-              placeholder="you@lightning.fm"
+              placeholder="you@coinos.io"
               className={inputClass}
             />
+            {walletCheck === "checking" && (
+              <p className="font-small text-muted-foreground mt-1 animate-pulse">
+                Checking your wallet: we request a test invoice to confirm it
+                works. It is never paid and expires on its own.
+              </p>
+            )}
+            {walletCheck !== null && walletCheck !== "checking" && (
+              <p
+                className={`font-small mt-1 ${
+                  walletCheck.ok && walletCheck.verify_supported
+                    ? "text-amber"
+                    : "text-[var(--error)]"
+                }`}
+              >
+                {!walletCheck.ok
+                  ? `This address didn't return an invoice: ${walletCheck.error ?? "unknown error"}`
+                  : walletCheck.verify_supported
+                    ? `Wallet check passed — ${walletCheck.provider ?? "your provider"} issues invoices and confirms payments (LUD-21). You can sell downloads.`
+                    : `This wallet issues invoices but can't confirm payments (no LUD-21 support), so selling downloads won't work. Zaps are fine. Coinos and Alby support it.`}
+              </p>
+            )}
+            {walletCheckError && (
+              <p className="font-small text-muted-foreground mt-1">
+                Couldn&apos;t check the wallet ({walletCheckError}) — your
+                profile is published; selling will re-check later.
+              </p>
+            )}
           </Field>
 
           <Field label="NIP-05" hint="verifies your name against a domain">

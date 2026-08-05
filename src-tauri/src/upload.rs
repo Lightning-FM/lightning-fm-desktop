@@ -103,6 +103,40 @@ pub fn get_gate_server() -> String {
     "http://localhost:3020/api/gate".to_string()
 }
 
+/// Gate wallet-check result (Option 3, Phase 4). Extra fields the gate
+/// returns (sendable range, checked_at) are ignored — the UI only needs
+/// these.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct WalletCheck {
+    pub ok: bool,
+    pub lud16: String,
+    pub provider: Option<String>,
+    pub verify_supported: bool,
+    pub error: Option<String>,
+}
+
+/// Ask the gate to probe a Lightning address: full LNURL-pay flow ending
+/// in a real test invoice that is never paid. Callers must show the
+/// transparency copy while this runs — the artist's wallet may display
+/// the unpaid invoice, and nobody should wonder what it is.
+pub async fn check_wallet(lud16: &str) -> Result<WalletCheck, String> {
+    let base = get_gate_server().trim_end_matches('/').to_string();
+    let response = reqwest::Client::new()
+        .post(format!("{}/wallet-check", base))
+        .header("Content-Type", "application/json")
+        .body(serde_json::json!({ "lud16": lud16 }).to_string())
+        .send()
+        .await
+        .map_err(|e| format!("Wallet check request failed: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("Wallet check refused {}", error_body(response).await));
+    }
+    response
+        .json::<WalletCheck>()
+        .await
+        .map_err(|e| format!("Wallet check returned an invalid response: {}", e))
+}
+
 /// Sign a NIP-98 (kind 27235) auth header for a gate request. The gate
 /// binds the payload tag to sha256 of the exact body string sent.
 fn nip98_header(

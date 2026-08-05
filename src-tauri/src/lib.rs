@@ -33,7 +33,7 @@ use commands::{
     upload_track,
     // Products (downloads for sale)
     product_publish, product_list_mine, product_set_status, product_upload_artifact,
-    product_upload_artifact_gate,
+    product_upload_artifact_gate, wallet_check,
     // Buying (desktop buyer)
     products_fetch, purchase_execute, purchases_list,
     // Metadata & waveform
@@ -75,7 +75,7 @@ pub fn run() {
             upload_track,
             // Products (downloads for sale)
             product_publish, product_list_mine, product_set_status, product_upload_artifact,
-            product_upload_artifact_gate,
+            product_upload_artifact_gate, wallet_check,
             // Buying (desktop buyer)
             products_fetch, purchase_execute, purchases_list,
             // Metadata & waveform

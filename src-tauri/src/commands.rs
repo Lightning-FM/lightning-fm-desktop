@@ -1425,6 +1425,14 @@ pub async fn product_upload_artifact_gate(
     ).await
 }
 
+/// Probe a Lightning address through the gate (Option 3, Phase 4): full
+/// LNURL-pay flow ending in a real test invoice that is never paid. The
+/// calling UI must say so while it runs.
+#[tauri::command]
+pub async fn wallet_check(lud16: String) -> Result<crate::upload::WalletCheck, String> {
+    crate::upload::check_wallet(&lud16).await
+}
+
 /// Fetch active product listings for the catalog's artists (buyer browse).
 #[tauri::command]
 pub async fn products_fetch(

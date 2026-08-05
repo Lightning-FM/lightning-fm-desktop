@@ -88,6 +88,12 @@ export function UploadView() {
     localStorage.setItem("lfm_seller_endpoint", value);
   }
 
+  // Wallet pre-check feedback for the gate sell path (Phase 4)
+  const [walletNotice, setWalletNotice] = useState<{
+    kind: "checking" | "error";
+    text: string;
+  } | null>(null);
+
   function handleSellViaChange(value: "gate" | "node") {
     setSellVia(value);
     localStorage.setItem("lfm_sell_via", value);
@@ -326,6 +332,56 @@ export function UploadView() {
       (t) => t.stage === "draft" || t.stage === "error"
     );
     if (drafts.length === 0) return;
+
+    // Selling through the gate? Prove the payout address works BEFORE any
+    // artifact leaves this machine (Phase 4) — one check for the whole
+    // batch, not one per track. The gate re-enforces server-side; this
+    // exists so a broken wallet fails in seconds, not after a 500MB upload.
+    setWalletNotice(null);
+    if (sellVia === "gate" && drafts.some((t) => t.sellEnabled)) {
+      setWalletNotice({
+        kind: "checking",
+        text: "Checking your wallet: we request a test invoice to confirm it works. It is never paid and expires on its own.",
+      });
+      try {
+        const profile = await invoke<{ lud16: string | null } | null>(
+          "profile_fetch"
+        );
+        const lud16 = profile?.lud16?.trim();
+        if (!lud16) {
+          setWalletNotice({
+            kind: "error",
+            text: "Set a Lightning address in Settings first — that is where your money goes.",
+          });
+          return;
+        }
+        const check = await invoke<{
+          ok: boolean;
+          lud16: string;
+          verify_supported: boolean;
+          error: string | null;
+        }>("wallet_check", { lud16 });
+        if (!check.ok) {
+          setWalletNotice({
+            kind: "error",
+            text: `Your Lightning address (${check.lud16}) didn't return an invoice: ${check.error ?? "unknown error"}. Fix it in Settings, then publish again.`,
+          });
+          return;
+        }
+        if (!check.verify_supported) {
+          setWalletNotice({
+            kind: "error",
+            text: `Your wallet (${check.lud16}) can't confirm payments (no LUD-21 support), so buyers couldn't unlock downloads. Switch to a wallet like Coinos or Alby, update Settings, then publish again.`,
+          });
+          return;
+        }
+        setWalletNotice(null);
+      } catch {
+        // The check itself failed (offline, gate unreachable) — don't
+        // block publishing on it; the gate enforces at registration.
+        setWalletNotice(null);
+      }
+    }
 
     setPublishingInProgress(true);
 
@@ -649,6 +705,19 @@ export function UploadView() {
           )}
         </div>
       </div>
+
+      {/* Wallet pre-check notice (gate sell path) */}
+      {walletNotice && (
+        <div
+          className={`shrink-0 px-4 py-2 border-t border-border font-small ${
+            walletNotice.kind === "error"
+              ? "text-[var(--error)]"
+              : "text-muted-foreground animate-pulse"
+          }`}
+        >
+          {walletNotice.text}
+        </div>
+      )}
 
       {/* Footer -- status bar + actions */}
       <div className="shrink-0 h-10 flex items-center px-4 border-t border-border gap-4">
