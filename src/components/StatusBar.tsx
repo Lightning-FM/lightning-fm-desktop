@@ -13,7 +13,6 @@ interface StatusBarProps {
 export const StatusBar = memo(function StatusBar({
   trackCount,
   identity,
-  credits,
   satsPaid,
   hasSession,
   onSignIn,
@@ -36,13 +35,11 @@ export const StatusBar = memo(function StatusBar({
           Sign In
         </span>
       )}
-      {credits && (
-        <span className="font-small text-muted-foreground ml-auto">
-          &#9889; {credits.remaining_sats.toLocaleString()} sats
-        </span>
-      )}
+      {/* Streaming-credits balance intentionally not shown: listening is
+          free (decision:lfm_pivot_free_listening_monetize_goods) and the
+          1,000-sat welcome-credits figure was simulation-era noise. */}
       {hasSession && (
-        <span className="font-small text-amber">
+        <span className="font-small text-amber ml-auto">
           &#9889; {satsPaid} sats paid
         </span>
       )}

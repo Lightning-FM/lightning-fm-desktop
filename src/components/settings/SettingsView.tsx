@@ -54,6 +54,22 @@ export function SettingsView({ npub }: SettingsViewProps) {
     "idle"
   );
   const [message, setMessage] = useState("");
+  const [signOutArmed, setSignOutArmed] = useState(false);
+
+  async function handleSignOut() {
+    try {
+      await invoke("identity_delete");
+      // Identity-scoped view state must not leak to the next signer
+      localStorage.removeItem("lfm_seller_endpoint");
+      localStorage.removeItem("lfm_sell_via");
+      // Back to onboarding — App re-checks identity on load
+      window.location.reload();
+    } catch (err) {
+      setStatus("error");
+      setMessage(String(err));
+      setSignOutArmed(false);
+    }
+  }
 
   // Load whatever is already published for this identity
   useEffect(() => {
@@ -125,7 +141,7 @@ export function SettingsView({ npub }: SettingsViewProps) {
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="0GGM3NT3D"
+              placeholder="Your artist name"
               className={inputClass}
             />
           </Field>
@@ -211,9 +227,43 @@ export function SettingsView({ npub }: SettingsViewProps) {
           <div className="font-label-mono text-muted-foreground uppercase tracking-wider text-[10px] mb-1">
             Identity
           </div>
-          <div className="font-mono text-[11px] text-secondary-foreground break-all">
+          <div className="font-mono text-[11px] text-secondary-foreground break-all mb-3">
             {npub}
           </div>
+
+          {!signOutArmed ? (
+            <button
+              type="button"
+              onClick={() => setSignOutArmed(true)}
+              className="h-8 px-4 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider text-[11px] hover:border-[var(--error)] hover:text-[var(--error)] transition-all"
+            >
+              Sign out
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="font-small text-[var(--error)]">
+                Signing out removes this key from your Mac&apos;s Keychain. If
+                the nsec isn&apos;t backed up somewhere else, this identity is
+                gone forever — export it first.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="h-8 px-4 border border-[var(--error)] text-[var(--error)] font-label-mono uppercase tracking-wider text-[11px] hover:bg-[var(--error)]/10 transition-all"
+                >
+                  Sign out &amp; forget key
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSignOutArmed(false)}
+                  className="h-8 px-4 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider text-[11px] hover:text-foreground transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

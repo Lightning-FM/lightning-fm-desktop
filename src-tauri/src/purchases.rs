@@ -14,6 +14,10 @@ pub struct PurchaseRecord {
     pub slug: String,
     pub title: String,
     pub artist_pubkey: String,
+    /// Hex pubkey of the identity that bought it. Purchases are private to
+    /// the buyer; records without one (pre-field legacy) are shown to no one.
+    #[serde(default)]
+    pub buyer_pubkey: String,
     pub endpoint: String,
     pub amount_sats: u64,
     pub payment_hash: String,
@@ -68,9 +72,19 @@ pub fn record_purchase(state: &PurchasesState, record: PurchaseRecord) -> Result
     Ok(())
 }
 
-pub fn list_purchases(state: &PurchasesState) -> Result<Vec<PurchaseRecord>, String> {
+/// List the given buyer's purchases, newest first. The store is shared
+/// across identities on this machine, so filtering here is what keeps one
+/// signer's purchase history invisible to the next.
+pub fn list_purchases(
+    state: &PurchasesState,
+    buyer_pubkey: &str,
+) -> Result<Vec<PurchaseRecord>, String> {
     let records = state.records.lock().map_err(|_| "Purchases lock poisoned")?;
-    let mut out = records.clone();
+    let mut out: Vec<PurchaseRecord> = records
+        .iter()
+        .filter(|r| !buyer_pubkey.is_empty() && r.buyer_pubkey == buyer_pubkey)
+        .cloned()
+        .collect();
     out.sort_by(|a, b| b.purchased_at.cmp(&a.purchased_at));
     Ok(out)
 }
@@ -84,6 +98,7 @@ mod tests {
             slug: slug.into(),
             title: "T".into(),
             artist_pubkey: "a".repeat(64),
+            buyer_pubkey: "d".repeat(64),
             endpoint: "http://localhost:18190".into(),
             amount_sats: 2500,
             payment_hash: "b".repeat(64),
@@ -100,8 +115,23 @@ mod tests {
         let state = PurchasesState {
             records: Mutex::new(vec![record("old", 100), record("new", 200)]),
         };
-        let list = list_purchases(&state).unwrap();
+        let list = list_purchases(&state, &"d".repeat(64)).unwrap();
         assert_eq!(list[0].slug, "new");
         assert_eq!(list[1].slug, "old");
+    }
+
+    #[test]
+    fn list_only_shows_the_buyers_own_purchases() {
+        let mut other = record("theirs", 300);
+        other.buyer_pubkey = "e".repeat(64);
+        let mut legacy = record("legacy", 50);
+        legacy.buyer_pubkey = String::new(); // pre-field record — attributable to no one
+        let state = PurchasesState {
+            records: Mutex::new(vec![record("mine", 100), other, legacy]),
+        };
+        let list = list_purchases(&state, &"d".repeat(64)).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].slug, "mine");
+        assert!(list_purchases(&state, "").unwrap().is_empty());
     }
 }

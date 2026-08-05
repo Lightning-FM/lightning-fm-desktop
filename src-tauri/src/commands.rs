@@ -163,25 +163,50 @@ pub fn identity_check(state: State<IdentityState>) -> Result<Option<IdentityInfo
     }
 }
 
+/// The relay client bakes its signer in at connect time, so every identity
+/// change MUST rebuild (or drop) it — a stale client silently signs and
+/// publishes as the previous identity.
+async fn rebuild_relay_client(
+    keys: &Keys,
+    relay_state: &State<'_, RelayState>,
+) -> Result<(), String> {
+    let client = crate::relay::connect(Some(keys)).await?;
+    *relay_state.client.lock().await = Some(client);
+    Ok(())
+}
+
 #[tauri::command]
-pub fn identity_create(display_name: Option<String>, state: State<IdentityState>) -> Result<IdentityInfo, String> {
-    let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
-
-    if keys_lock.is_some() {
-        return Err("Identity already exists. Delete first to create a new one.".to_string());
-    }
-
-    let (keys, info) = crate::identity::create_identity_with_name(display_name)?;
-    *keys_lock = Some(keys);
+pub async fn identity_create(
+    display_name: Option<String>,
+    state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<IdentityInfo, String> {
+    let (keys, info) = {
+        let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
+        if keys_lock.is_some() {
+            return Err("Identity already exists. Delete first to create a new one.".to_string());
+        }
+        let (keys, info) = crate::identity::create_identity_with_name(display_name)?;
+        *keys_lock = Some(keys.clone());
+        (keys, info)
+    };
+    rebuild_relay_client(&keys, &relay_state).await?;
     Ok(info)
 }
 
 #[tauri::command]
-pub fn identity_import(nsec: String, state: State<IdentityState>) -> Result<IdentityInfo, String> {
-    let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
-
-    let (keys, info) = crate::identity::import_nsec(&nsec)?;
-    *keys_lock = Some(keys);
+pub async fn identity_import(
+    nsec: String,
+    state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<IdentityInfo, String> {
+    let (keys, info) = {
+        let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
+        let (keys, info) = crate::identity::import_nsec(&nsec)?;
+        *keys_lock = Some(keys.clone());
+        (keys, info)
+    };
+    rebuild_relay_client(&keys, &relay_state).await?;
     Ok(info)
 }
 
@@ -196,11 +221,17 @@ pub fn identity_export_nsec(state: State<IdentityState>) -> Result<String, Strin
 }
 
 #[tauri::command]
-pub fn identity_delete(state: State<IdentityState>) -> Result<String, String> {
-    let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
-
-    crate::identity::delete_identity()?;
-    *keys_lock = None;
+pub async fn identity_delete(
+    state: State<'_, IdentityState>,
+    relay_state: State<'_, RelayState>,
+) -> Result<String, String> {
+    {
+        let mut keys_lock = state.keys.lock().map_err(|e| e.to_string())?;
+        crate::identity::delete_identity()?;
+        *keys_lock = None;
+    }
+    // Drop the signed client — load_catalog reconnects anonymously
+    *relay_state.client.lock().await = None;
     Ok("Identity deleted".to_string())
 }
 
@@ -1438,8 +1469,15 @@ pub async fn purchase_execute(
     format: Option<String>,
     ldk_state: State<'_, LdkState>,
     purchases_state: State<'_, crate::purchases::PurchasesState>,
+    identity_state: State<'_, IdentityState>,
     app: AppHandle,
 ) -> Result<crate::purchases::PurchaseRecord, String> {
+    // Purchases are recorded against the signed-in identity so one signer's
+    // history never surfaces for the next.
+    let buyer_pubkey = identity_state.keys.lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|k| k.public_key().to_hex()))
+        .ok_or("No identity. Create or import one first.")?;
     let base = endpoint.trim_end_matches('/').to_string();
 
     // 1. Invoice from the seller daemon
@@ -1542,6 +1580,7 @@ pub async fn purchase_execute(
         slug,
         title,
         artist_pubkey,
+        buyer_pubkey,
         endpoint: base,
         amount_sats: invoice.amount_sats,
         payment_hash: invoice.payment_hash,
@@ -1560,12 +1599,17 @@ pub async fn purchase_execute(
     Ok(record)
 }
 
-/// List past purchases, newest first.
+/// List the signed-in identity's past purchases, newest first.
 #[tauri::command]
 pub fn purchases_list(
     purchases_state: State<'_, crate::purchases::PurchasesState>,
+    identity_state: State<'_, IdentityState>,
 ) -> Result<Vec<crate::purchases::PurchaseRecord>, String> {
-    crate::purchases::list_purchases(&purchases_state)
+    let buyer_pubkey = identity_state.keys.lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|k| k.public_key().to_hex()))
+        .unwrap_or_default(); // signed out → no purchases visible
+    crate::purchases::list_purchases(&purchases_state, &buyer_pubkey)
 }
 
 /// Activate or deactivate a listing by slug — republishes the same product

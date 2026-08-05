@@ -28,11 +28,14 @@ fn get_relays() -> Vec<String> {
         return relays.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     }
 
-    // Release builds use production relays; debug builds use dev relays
-    if cfg!(debug_assertions) {
-        DEV_RELAYS.iter().map(|s| s.to_string()).collect()
-    } else {
+    // LFM_ENV=production selects production relays even in a debug build —
+    // matching how the Blossom and gate endpoints are chosen. Without this,
+    // "production run of a dev build" reads dev relays and stalls the
+    // catalog waiting on a localhost relay that may not exist.
+    if std::env::var("LFM_ENV").as_deref() == Ok("production") || !cfg!(debug_assertions) {
         PROD_RELAYS.iter().map(|s| s.to_string()).collect()
+    } else {
+        DEV_RELAYS.iter().map(|s| s.to_string()).collect()
     }
 }
 
@@ -96,14 +99,23 @@ pub async fn connect(keys: Option<&Keys>) -> Result<Arc<Client>, String> {
     Ok(Arc::new(client))
 }
 
-/// Fetch all tracks from relays (kind 31337 addressable events)
+/// The catalog lives on the FIRST configured relay (relay.lightning.fm in
+/// every default). Track queries must go there specifically: merged
+/// all-relay fetches keep only the newest ~limit events, and public relays
+/// carry a constant stream of foreign kind-31337s that push our catalog
+/// out entirely. Profiles and gossip still use every relay.
+fn catalog_relay() -> String {
+    get_relays().into_iter().next().unwrap_or_else(|| "wss://relay.lightning.fm".to_string())
+}
+
+/// Fetch all tracks from the catalog relay (kind 31337 addressable events)
 pub async fn fetch_tracks(client: &Client) -> Result<Vec<TrackInfo>, String> {
     let filter = Filter::new()
         .kind(Kind::Custom(KIND_TRACK))
-        .limit(100);
+        .limit(500);
 
     let events = client
-        .fetch_events(filter, std::time::Duration::from_secs(3))
+        .fetch_events_from(vec![catalog_relay()], filter, std::time::Duration::from_secs(3))
         .await
         .map_err(|e| format!("Failed to fetch tracks: {}", e))?;
 
@@ -119,13 +131,15 @@ pub async fn fetch_tracks(client: &Client) -> Result<Vec<TrackInfo>, String> {
 /// Fetch tracks + artist profiles in two batched relay requests.
 /// Returns tracks with artist names already resolved where possible.
 pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::collections::HashMap<String, ProfileData>), String> {
-    // Step 1: fetch kind 31337 tracks (3s timeout)
+    // Step 1: fetch kind 31337 tracks from the catalog relay (3s timeout).
+    // See catalog_relay() — an all-relay fetch lets foreign audio events
+    // crowd the entire catalog out of the merged result.
     let track_filter = Filter::new()
         .kind(Kind::Custom(KIND_TRACK))
-        .limit(100);
+        .limit(500);
 
     let track_events = client
-        .fetch_events(track_filter, std::time::Duration::from_secs(3))
+        .fetch_events_from(vec![catalog_relay()], track_filter, std::time::Duration::from_secs(3))
         .await
         .map_err(|e| format!("Failed to fetch tracks: {}", e))?;
 
