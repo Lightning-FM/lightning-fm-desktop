@@ -129,7 +129,7 @@ export function TrackDetail({
 
         {/* Tags — the raw text is held locally so separators survive typing;
             round-tripping through the parsed array would eat the comma. */}
-        <Field label="Tags" hint="Comma-separated — drives discovery">
+        <Field label="Tags" hint="Comma-separated — published with your track">
           <input
             type="text"
             value={tagsText}
@@ -320,7 +320,7 @@ export function TrackDetail({
 
         {showAdvanced && (
           <div className="flex flex-col gap-3 pl-4 border-l border-border">
-            <Field label="ISRC" hint="Auto-generated if left blank">
+            <Field label="ISRC" hint="Optional — from your distributor or ISRC agency">
               <input
                 type="text"
                 value={track.isrc}
@@ -329,7 +329,7 @@ export function TrackDetail({
                 className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors"
               />
             </Field>
-            <Field label="Description">
+            <Field label="Description" hint="Published with the track, and on the sale listing if selling">
               <textarea
                 value={track.description}
                 onChange={(e) => onUpdate({ description: e.target.value })}

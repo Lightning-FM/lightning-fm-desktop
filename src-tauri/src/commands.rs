@@ -409,10 +409,19 @@ pub async fn upload_track(
     slug: String,
     duration_secs: Option<u64>,
     preview_secs: Option<u64>,
+    extras: Option<crate::relay::TrackExtras>,
     identity_state: State<'_, IdentityState>,
     relay_state: State<'_, RelayState>,
     ldk_state: State<'_, LdkState>,
+    app: AppHandle,
 ) -> Result<TrackInfo, String> {
+    let emit = |stage: &str, progress: u8| {
+        let _ = app.emit(
+            "upload-progress",
+            serde_json::json!({ "slug": slug, "stage": stage, "progress": progress }),
+        );
+    };
+
     let path = Path::new(&file_path);
     if !path.exists() {
         return Err(format!("File not found: {}", file_path));
@@ -425,7 +434,9 @@ pub async fn upload_track(
     };
 
     // Upload to Blossom
+    emit("audio", 20);
     let upload = crate::upload::upload_to_blossom(path, &keys).await?;
+    emit("artwork", 55);
 
     // Embedded cover art rides along to Blossom so the event can reference a
     // real URL. A missing or unreadable picture is not fatal — the track
@@ -448,6 +459,7 @@ pub async fn upload_track(
     };
 
     // Publish kind 31337 to relays
+    emit("publish", 75);
     let client_lock = relay_state.client.lock().await;
     let client = client_lock.as_ref()
         .ok_or("Not connected to relays")?;
@@ -471,6 +483,7 @@ pub async fn upload_track(
         preview_secs,
         lightning_node_id.as_deref(),
         image_url.as_deref(),
+        &extras.unwrap_or_default(),
     ).await?;
 
     Ok(TrackInfo {
@@ -1009,12 +1022,16 @@ pub fn stream_info(state: State<StreamingState>) -> Result<Option<StreamSession>
 /// Read metadata from an audio file's embedded tags (ID3, Vorbis, etc.)
 /// Returns title, artist, album, genre, year, lyrics, audio properties.
 #[tauri::command]
-pub fn metadata_read(file_path: String) -> Result<crate::metadata::AudioMetadata, String> {
-    let path = Path::new(&file_path);
-    if !path.exists() {
-        return Err(format!("File not found: {}", file_path));
-    }
-    crate::metadata::read_metadata(path)
+pub async fn metadata_read(file_path: String) -> Result<crate::metadata::AudioMetadata, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = Path::new(&file_path);
+        if !path.exists() {
+            return Err(format!("File not found: {}", file_path));
+        }
+        crate::metadata::read_metadata(path)
+    })
+    .await
+    .map_err(|e| format!("Metadata task failed: {}", e))?
 }
 
 /// Audio extensions the upload flow accepts.
@@ -1034,7 +1051,13 @@ fn is_audio_file(path: &Path) -> bool {
 /// non-audio files are dropped. Order is stable so track numbering is
 /// predictable.
 #[tauri::command]
-pub fn expand_audio_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+pub async fn expand_audio_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || expand_audio_paths_sync(paths))
+        .await
+        .map_err(|e| format!("File scan task failed: {}", e))?
+}
+
+fn expand_audio_paths_sync(paths: Vec<String>) -> Result<Vec<String>, String> {
     let mut files: Vec<String> = Vec::new();
 
     for raw in paths {
@@ -1062,7 +1085,7 @@ pub fn expand_audio_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
 /// Called at publish time so the file on disk has correct tags before
 /// hashing and uploading to Blossom. Only writes fields that are provided.
 #[tauri::command]
-pub fn metadata_write(
+pub async fn metadata_write(
     file_path: String,
     title: Option<String>,
     artist: Option<String>,
@@ -1072,47 +1095,58 @@ pub fn metadata_write(
     year: Option<String>,
     lyrics: Option<String>,
 ) -> Result<(), String> {
-    let path = Path::new(&file_path);
-    if !path.exists() {
-        return Err(format!("File not found: {}", file_path));
-    }
-
-    let write_data = crate::metadata::MetadataWrite {
-        title,
-        artist,
-        album,
-        track_number,
-        genre,
-        year,
-        lyrics,
-    };
-    crate::metadata::write_metadata(path, &write_data)
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = Path::new(&file_path);
+        if !path.exists() {
+            return Err(format!("File not found: {}", file_path));
+        }
+        let write_data = crate::metadata::MetadataWrite {
+            title,
+            artist,
+            album,
+            track_number,
+            genre,
+            year,
+            lyrics,
+        };
+        crate::metadata::write_metadata(path, &write_data)
+    })
+    .await
+    .map_err(|e| format!("Metadata task failed: {}", e))?
 }
 
 /// Extract embedded artwork from an audio file as a base64 data URL.
 /// Returns None if no artwork is embedded.
 #[tauri::command]
-pub fn artwork_extract(file_path: String) -> Result<Option<crate::metadata::ExtractedArtwork>, String> {
-    let path = Path::new(&file_path);
-    if !path.exists() {
-        return Err(format!("File not found: {}", file_path));
-    }
-    crate::metadata::extract_artwork(path)
+pub async fn artwork_extract(file_path: String) -> Result<Option<crate::metadata::ExtractedArtwork>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = Path::new(&file_path);
+        if !path.exists() {
+            return Err(format!("File not found: {}", file_path));
+        }
+        crate::metadata::extract_artwork(path)
+    })
+    .await
+    .map_err(|e| format!("Artwork task failed: {}", e))?
 }
 
 /// Generate waveform peaks from an audio file.
 /// Decodes to PCM, computes peaks, caches to ~/.lightning-fm/waveforms/.
 /// Returns 200 normalized floats (0.0-1.0) for rendering.
 #[tauri::command]
-pub fn waveform_generate(
+pub async fn waveform_generate(
     file_path: String,
     peak_count: Option<usize>,
 ) -> Result<crate::waveform::WaveformData, String> {
-    let path = Path::new(&file_path);
-    if !path.exists() {
-        return Err(format!("File not found: {}", file_path));
-    }
-    crate::waveform::generate_peaks(path, peak_count)
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = Path::new(&file_path);
+        if !path.exists() {
+            return Err(format!("File not found: {}", file_path));
+        }
+        crate::waveform::generate_peaks(path, peak_count)
+    })
+    .await
+    .map_err(|e| format!("Waveform task failed: {}", e))?
 }
 
 // ─── Withdrawal Commands ───────────────────────────────────
@@ -1402,12 +1436,9 @@ pub async fn product_upload_artifact(
 #[tauri::command]
 pub async fn product_upload_artifact_gate(
     file_path: String,
-    slug: String,
-    title: String,
-    price_sats: u64,
-    floor_sats: Option<u64>,
-    format: String,
+    product: GateProductArgs,
     identity_state: State<'_, IdentityState>,
+    app: AppHandle,
 ) -> Result<String, String> {
     let keys = identity_state.keys.lock()
         .ok()
@@ -1417,12 +1448,27 @@ pub async fn product_upload_artifact_gate(
     crate::upload::upload_artifact_to_gate(
         std::path::Path::new(&file_path),
         &keys,
-        &slug,
-        &title,
-        price_sats,
-        floor_sats,
-        &format,
+        &crate::upload::GateProductSpec {
+            slug: &product.slug,
+            title: &product.title,
+            price_sats: product.price_sats,
+            floor_sats: product.floor_sats,
+            format: &product.format,
+        },
+        Some(&app),
     ).await
+}
+
+/// Product fields for the gate sell path, grouped so the command stays
+/// under clippy's argument ceiling.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GateProductArgs {
+    pub slug: String,
+    pub title: String,
+    pub price_sats: u64,
+    pub floor_sats: Option<u64>,
+    pub format: String,
 }
 
 /// Probe a Lightning address through the gate (Option 3, Phase 4): full

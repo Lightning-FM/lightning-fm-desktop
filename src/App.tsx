@@ -7,6 +7,7 @@ import { DashboardView } from "./components/dashboard";
 import { SettingsView } from "./components/settings/SettingsView";
 import { OnboardingView } from "./components/onboarding";
 import { StatusBar } from "./components/StatusBar";
+import { GetStarted } from "./components/GetStarted";
 import { PlayerBar } from "./components/player/PlayerBar";
 import { usePlayback } from "./hooks/usePlayback";
 import { useStreaming } from "./hooks/useStreaming";
@@ -222,14 +223,23 @@ function App() {
           {view === "upload" ? (
             <UploadView />
           ) : view === "library" ? (
-            <LibraryView
-              tracks={tracks}
-              loading={loading}
-              activeTrackHash={playback.activeTrack?.hash || null}
-              isPlaying={playback.isPlaying}
-              onPlay={handlePlayTrack}
-              onQueueChange={handleQueueChange}
-            />
+            <div className="h-full flex flex-col">
+              <GetStarted
+                identity={identity}
+                tracks={tracks}
+                onNavigate={(v) => setView(v)}
+              />
+              <div className="flex-1 min-h-0">
+                <LibraryView
+                  tracks={tracks}
+                  loading={loading}
+                  activeTrackHash={playback.activeTrack?.hash || null}
+                  isPlaying={playback.isPlaying}
+                  onPlay={handlePlayTrack}
+                  onQueueChange={handleQueueChange}
+                />
+              </div>
+            </div>
           ) : view === "dashboard" ? (
             <DashboardView />
           ) : view === "settings" && identity ? (

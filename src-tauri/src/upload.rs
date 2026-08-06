@@ -186,23 +186,49 @@ async fn error_body(response: reqwest::Response) -> String {
 /// registration over NIP-98. The payout address is whatever lud16 the
 /// artist's Nostr profile carries — the gate accepts nothing else.
 /// Returns the gate endpoint for the listing's `endpoint` tag.
+/// What the gate needs to register a product listing.
+pub struct GateProductSpec<'a> {
+    pub slug: &'a str,
+    pub title: &'a str,
+    pub price_sats: u64,
+    pub floor_sats: Option<u64>,
+    pub format: &'a str,
+}
+
 pub async fn upload_artifact_to_gate(
     file_path: &Path,
     keys: &Keys,
-    slug: &str,
-    title: &str,
-    price_sats: u64,
-    floor_sats: Option<u64>,
-    format: &str,
+    spec: &GateProductSpec<'_>,
+    app: Option<&tauri::AppHandle>,
 ) -> Result<String, String> {
+    use tauri::Emitter;
+    let GateProductSpec { slug, title, price_sats, floor_sats, format } = *spec;
+    let emit = |stage: &str, progress: u8| {
+        if let Some(app) = app {
+            let _ = app.emit(
+                "upload-progress",
+                serde_json::json!({ "slug": slug, "stage": stage, "progress": progress }),
+            );
+        }
+    };
+
     let base = get_gate_server().trim_end_matches('/').to_string();
-    let bytes = std::fs::read(file_path)
-        .map_err(|e| format!("Failed to read artifact: {}", e))?;
-    let sha256 = sha256_hex(&bytes);
+    emit("artifact_hash", 15);
+    // Whole-file read + hash off the async workers — lossless masters are big
+    let owned_path = file_path.to_path_buf();
+    let (bytes, sha256) = tauri::async_runtime::spawn_blocking(move || {
+        let bytes = std::fs::read(&owned_path)
+            .map_err(|e| format!("Failed to read artifact: {}", e))?;
+        let hash = sha256_hex(&bytes);
+        Ok::<_, String>((bytes, hash))
+    })
+    .await
+    .map_err(|e| format!("Artifact read task failed: {}", e))??;
     let size_bytes = bytes.len() as u64;
     let client = reqwest::Client::new();
 
     // 1. Ask for a presigned upload slot (NIP-98 over the JSON body)
+    emit("artifact_presign", 25);
     let uploads_url = format!("{}/uploads", base);
     let upload_req = serde_json::json!({ "sha256": sha256, "size_bytes": size_bytes }).to_string();
     let auth = nip98_header(keys, &uploads_url, "POST", Some(sha256_hex(upload_req.as_bytes())))?;
@@ -228,6 +254,7 @@ pub async fn upload_artifact_to_gate(
         .map_err(|e| format!("Gate returned an invalid upload slot: {}", e))?;
 
     // 2. Send the file straight to storage — the presigned URL is the auth
+    emit("artifact_upload", 35);
     let response = client
         .put(&slot.upload_url)
         .header("Content-Type", "application/octet-stream")
@@ -240,6 +267,7 @@ pub async fn upload_artifact_to_gate(
     }
 
     // 3. Register the product (NIP-98 over the JSON body)
+    emit("artifact_register", 70);
     let product_url = format!("{}/products/{}", base, slug);
     let product_req = serde_json::json!({
         "title": title,
@@ -352,7 +380,16 @@ mod tests {
             std::env::set_var("LFM_gate_server", "https://lightning.fm/api/gate");
 
             let err = upload_artifact_to_gate(
-                &tmp, &keys, "interop-test", "Interop Test", 100, None, "mp3",
+                &tmp,
+                &keys,
+                &GateProductSpec {
+                    slug: "interop-test",
+                    title: "Interop Test",
+                    price_sats: 100,
+                    floor_sats: None,
+                    format: "mp3",
+                },
+                None,
             )
             .await
             .expect_err("un-allowlisted key must be refused");

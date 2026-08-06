@@ -1,8 +1,9 @@
 // Upload view — orchestrates the 3-pane upload experience
 // Drop zone (initial) → Track list | Detail | Preview (after files added)
 
-import { useReducer, useCallback, useEffect, useState } from "react";
+import { useReducer, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { UploadTrack } from "./types";
 import { uploadReducer, initialUploadState } from "./reducer";
@@ -93,6 +94,48 @@ export function UploadView() {
     kind: "checking" | "error";
     text: string;
   } | null>(null);
+
+  // Real per-stage progress from the Rust upload pipeline. Track stages
+  // move the per-track bar; artifact stages (post-publish sale upload)
+  // surface in the footer notice since the track already reads "live".
+  const tracksRef = useRef(state.tracks);
+  tracksRef.current = state.tracks;
+  useEffect(() => {
+    const stageMap: Record<string, "uploading" | "publishing"> = {
+      audio: "uploading",
+      artwork: "uploading",
+      publish: "publishing",
+    };
+    const artifactLabels: Record<string, string> = {
+      artifact_hash: "hashing the sale file",
+      artifact_presign: "reserving hosted storage",
+      artifact_upload: "uploading the sale file",
+      artifact_register: "registering the listing",
+    };
+    const unlisten = listen<{ slug: string; stage: string; progress: number }>(
+      "upload-progress",
+      (event) => {
+        const { slug, stage, progress } = event.payload;
+        const mapped = stageMap[stage];
+        if (mapped) {
+          const track = tracksRef.current.find(
+            (t) => slugify(t.title) === slug
+          );
+          if (track) {
+            dispatch({ type: "SET_STAGE", id: track.id, stage: mapped, progress });
+          }
+        } else if (artifactLabels[stage]) {
+          setWalletNotice({
+            kind: "checking",
+            text: `Sale listing: ${artifactLabels[stage]}…`,
+          });
+        }
+      }
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   function handleSellViaChange(value: "gate" | "node") {
     setSellVia(value);
@@ -431,6 +474,20 @@ export function UploadView() {
           title: track.title,
           slug: slugify(track.title),
           durationSecs: track.duration > 0 ? Math.round(track.duration) : undefined,
+          // Descriptive metadata rides into the 31337 event — tags become
+          // Nostr t tags, description becomes the event content.
+          extras: {
+            description: track.description || null,
+            album: track.album || null,
+            genre: track.genre || null,
+            year: track.year || null,
+            track_number: track.trackNumber || null,
+            tags: track.tags,
+            credits: track.credits || null,
+            isrc: track.isrc || null,
+            lyrics: track.lyrics || null,
+            explicit: track.isExplicit || null,
+          },
         });
 
         // Stage: publishing -- event was signed and sent to relays
@@ -464,11 +521,13 @@ export function UploadView() {
                 "product_upload_artifact_gate",
                 {
                   filePath: track.filePath,
-                  slug: slugify(track.title),
-                  title: track.title,
-                  priceSats: track.priceSats,
-                  floorSats: track.nameYourPrice ? track.floorSats : null,
-                  format: track.format.toLowerCase(),
+                  product: {
+                    slug: slugify(track.title),
+                    title: track.title,
+                    priceSats: track.priceSats,
+                    floorSats: track.nameYourPrice ? track.floorSats : null,
+                    format: track.format.toLowerCase(),
+                  },
                 }
               );
             } else {
@@ -505,7 +564,9 @@ export function UploadView() {
                 endpoint: productEndpoint,
               },
             });
+            setWalletNotice(null);
           } catch (err) {
+            setWalletNotice(null);
             dispatch({
               type: "SET_STAGE",
               id: track.id,

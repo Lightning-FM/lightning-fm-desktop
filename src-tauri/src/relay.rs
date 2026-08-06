@@ -328,6 +328,25 @@ pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::coll
     Ok((tracks, profiles))
 }
 
+/// Descriptive metadata the upload form collects beyond the core fields.
+/// Every field is optional — absent fields emit no tag. The description
+/// becomes the event CONTENT (matching kind 30402, where it already does).
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct TrackExtras {
+    pub description: Option<String>,
+    pub album: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<String>,
+    pub track_number: Option<u32>,
+    /// Free-form keywords, emitted as standard Nostr `t` tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub credits: Option<String>,
+    pub isrc: Option<String>,
+    pub lyrics: Option<String>,
+    pub explicit: Option<bool>,
+}
+
 /// Publish a track metadata event (kind 31337)
 pub async fn publish_track(
     client: &Client,
@@ -342,6 +361,7 @@ pub async fn publish_track(
     preview_secs: Option<u64>,
     lightning_node_id: Option<&str>,
     image_url: Option<&str>,
+    extras: &TrackExtras,
 ) -> Result<String, String> {
     let mut tags = vec![
         Tag::custom(TagKind::custom("d"), vec![slug.to_string()]),
@@ -372,7 +392,42 @@ pub async fn publish_track(
         tags.push(Tag::custom(TagKind::custom("image"), vec![image.to_string()]));
     }
 
-    let builder = EventBuilder::new(Kind::Custom(KIND_TRACK), "")
+    // Descriptive metadata (task lfm_upload_form_drops_metadata): only
+    // fields the artist actually filled produce tags.
+    for (name, value) in [
+        ("album", &extras.album),
+        ("genre", &extras.genre),
+        ("year", &extras.year),
+        ("credits", &extras.credits),
+        ("isrc", &extras.isrc),
+        ("lyrics", &extras.lyrics),
+    ] {
+        if let Some(v) = value {
+            let v = v.trim();
+            if !v.is_empty() {
+                tags.push(Tag::custom(TagKind::custom(name), vec![v.to_string()]));
+            }
+        }
+    }
+    if let Some(n) = extras.track_number {
+        tags.push(Tag::custom(TagKind::custom("track_number"), vec![n.to_string()]));
+    }
+    if extras.explicit == Some(true) {
+        tags.push(Tag::custom(TagKind::custom("explicit"), vec!["true".to_string()]));
+    }
+    for t in &extras.tags {
+        let t = t.trim().to_lowercase();
+        if !t.is_empty() {
+            tags.push(Tag::hashtag(t));
+        }
+    }
+
+    let content = extras
+        .description
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("");
+    let builder = EventBuilder::new(Kind::Custom(KIND_TRACK), content)
         .tags(tags);
 
     let output = client.send_event_builder(builder).await
