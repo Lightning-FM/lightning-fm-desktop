@@ -14,14 +14,12 @@ export interface StreamSession {
   is_playing: boolean;
   intervals_paid: number;
   total_artist_sats: number;
-  total_platform_sats: number;
   total_listener_sats: number;
 }
 
 export interface IntervalResult {
   session: StreamSession;
   artist_sats: number;
-  platform_sats: number;
   listener_sats: number;
   credits_remaining: number;
   credits_depleted: boolean;

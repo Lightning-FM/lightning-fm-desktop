@@ -1,5 +1,5 @@
 // Lightning FM — Streaming payment engine
-// Manages the keysend payment loop: 100 sats/min to artists, with rake model.
+// Manages the keysend payment loop: 100 sats/min, all of it to the artist.
 // All decision logic is pure and testable. LDK calls are isolated.
 
 use ldk_node::bitcoin::secp256k1::PublicKey;
@@ -13,9 +13,6 @@ pub const INTERVAL_SECS: u64 = 60;
 /// Base rate per interval
 pub const SATS_PER_INTERVAL: u64 = 100;
 
-/// Rake percentage when Lightning FM serves from mirror (not artist direct)
-pub const MIRROR_RAKE_PERCENT: u64 = 10;
-
 /// TLV type for Lightning FM custom records in keysend.
 /// All types must be ODD per BOLT 1 ("it's OK to be odd" — even types are rejected
 /// by nodes that don't understand them).
@@ -23,23 +20,17 @@ pub const TLV_TRACK_ID: u64 = 696969;
 pub const TLV_LISTENER_PUBKEY: u64 = 696971;
 pub const TLV_TIMESTAMP: u64 = 696973;
 
-// ─── Rake Calculation ────────────────────────────────────────
+// ─── Payment amount ──────────────────────────────────────────
 
-/// Calculate the payment split for a streaming interval.
-/// Returns (artist_sats, platform_sats).
-pub fn calculate_split(artist_direct: bool) -> (u64, u64) {
-    if artist_direct {
-        // Artist serves their own content — they get full amount
-        (SATS_PER_INTERVAL, 0)
-    } else {
-        // Lightning FM serves from mirror — take the rake
-        let platform_cut = SATS_PER_INTERVAL * MIRROR_RAKE_PERCENT / 100;
-        let artist_cut = SATS_PER_INTERVAL - platform_cut;
-        (artist_cut, platform_cut)
-    }
+/// Sats paid to the artist per interval. There is no platform cut — whether
+/// we serve the bytes from a mirror or the artist serves them directly, the
+/// listener's payment goes to the artist in full. See
+/// decision:lfm_pricing_no_rake_flat_convenience.
+pub fn artist_sats_per_interval() -> u64 {
+    SATS_PER_INTERVAL
 }
 
-/// Total sats the listener pays per interval (always the same regardless of rake)
+/// Total sats the listener pays per interval.
 pub fn listener_cost_per_interval() -> u64 {
     SATS_PER_INTERVAL
 }
@@ -107,7 +98,6 @@ pub struct StreamSession {
     pub is_playing: bool,
     pub intervals_paid: u64,
     pub total_artist_sats: u64,
-    pub total_platform_sats: u64,
     pub total_listener_sats: u64,
     pub started_at: u64,
 }
@@ -127,7 +117,6 @@ impl StreamSession {
             is_playing: true,
             intervals_paid: 0,
             total_artist_sats: 0,
-            total_platform_sats: 0,
             total_listener_sats: 0,
             started_at: now,
         }
@@ -135,10 +124,8 @@ impl StreamSession {
 
     /// Record a successful payment interval
     pub fn record_payment(&mut self) {
-        let (artist, platform) = calculate_split(self.artist_direct);
         self.intervals_paid += 1;
-        self.total_artist_sats += artist;
-        self.total_platform_sats += platform;
+        self.total_artist_sats += artist_sats_per_interval();
         self.total_listener_sats += listener_cost_per_interval();
     }
 
@@ -184,29 +171,26 @@ impl StreamingState {
 mod tests {
     use super::*;
 
-    // ─── Rake calculation tests ──────────────────────────────
+    // ─── Payment amount tests ────────────────────────────────
 
     #[test]
-    fn artist_direct_gets_full_payment() {
-        let (artist, platform) = calculate_split(true);
-        assert_eq!(artist, 100, "Artist should get full 100 sats");
-        assert_eq!(platform, 0, "Platform should get 0 sats");
+    fn artist_receives_the_whole_interval() {
+        assert_eq!(artist_sats_per_interval(), 100, "Artist gets all 100 sats");
     }
 
     #[test]
-    fn mirror_takes_ten_percent_rake() {
-        let (artist, platform) = calculate_split(false);
-        assert_eq!(artist, 90, "Artist should get 90 sats from mirror");
-        assert_eq!(platform, 10, "Platform should get 10 sats rake");
+    fn listener_payment_reaches_the_artist_intact() {
+        // No rake, ever — what the listener pays is what the artist receives,
+        // regardless of who served the bytes.
+        assert_eq!(artist_sats_per_interval(), listener_cost_per_interval());
     }
 
     #[test]
-    fn split_always_sums_to_interval() {
-        let (a1, p1) = calculate_split(true);
-        assert_eq!(a1 + p1, SATS_PER_INTERVAL);
-
-        let (a2, p2) = calculate_split(false);
-        assert_eq!(a2 + p2, SATS_PER_INTERVAL);
+    fn session_accrues_full_payment_for_mirror_served_tracks() {
+        let mut session = StreamSession::new("track-abc", "npub1xyz", None, false);
+        session.record_payment();
+        assert_eq!(session.total_artist_sats, 100);
+        assert_eq!(session.total_listener_sats, 100);
     }
 
     #[test]
@@ -254,20 +238,18 @@ mod tests {
 
         assert_eq!(session.intervals_paid, 3);
         assert_eq!(session.total_artist_sats, 300, "Artist gets 100 per interval (direct)");
-        assert_eq!(session.total_platform_sats, 0, "Platform gets 0 (direct)");
         assert_eq!(session.total_listener_sats, 300, "Listener pays 100 per interval");
     }
 
     #[test]
-    fn record_payment_mirror_accumulates_with_rake() {
+    fn record_payment_mirror_accumulates_without_rake() {
         let mut session = StreamSession::new("track-1", "artist-pub", None, false);
         session.record_payment();
         session.record_payment();
 
         assert_eq!(session.intervals_paid, 2);
-        assert_eq!(session.total_artist_sats, 180, "Artist gets 90 per interval (mirror)");
-        assert_eq!(session.total_platform_sats, 20, "Platform gets 10 per interval");
-        assert_eq!(session.total_listener_sats, 200, "Listener still pays 100 per interval");
+        assert_eq!(session.total_artist_sats, 200, "Artist gets 100 per interval from mirror too");
+        assert_eq!(session.total_listener_sats, 200, "Listener pays 100 per interval");
     }
 
     #[test]
@@ -334,7 +316,6 @@ mod tests {
 
         assert_eq!(session.intervals_paid, 5);
         assert_eq!(session.total_artist_sats, 500);
-        assert_eq!(session.total_platform_sats, 0);
         assert_eq!(session.total_listener_sats, 500);
         assert_eq!(session.minutes_streamed(), 5.0);
     }

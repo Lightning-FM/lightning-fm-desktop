@@ -859,7 +859,6 @@ pub fn stream_start(
 pub struct IntervalResult {
     pub session: StreamSession,
     pub artist_sats: u64,
-    pub platform_sats: u64,
     pub listener_sats: u64,
     pub credits_remaining: u64,
     pub credits_depleted: bool,
@@ -879,8 +878,8 @@ pub fn stream_tick(
         return Err("Session is paused".to_string());
     }
 
-    // Calculate the split
-    let (artist_sats, platform_sats) = crate::streaming::calculate_split(session.artist_direct);
+    // No rake — the listener's payment goes to the artist in full.
+    let artist_sats = crate::streaming::artist_sats_per_interval();
     let listener_cost = crate::streaming::listener_cost_per_interval();
 
     // Resolve everything fallible BEFORE deducting, so no `?` can return
@@ -961,10 +960,9 @@ pub fn stream_tick(
         }
 
         log::info!(
-            "Stream tick: {} sats to artist ({}), {} sats platform rake. Track: {}",
+            "Stream tick: {} sats to artist, served {}. Track: {}",
             artist_sats,
-            if session.artist_direct { "direct" } else { "mirror" },
-            platform_sats,
+            if session.artist_direct { "direct" } else { "from mirror" },
             session.track_id,
         );
     }
@@ -975,7 +973,6 @@ pub fn stream_tick(
     Ok(IntervalResult {
         session: session.clone(),
         artist_sats,
-        platform_sats,
         listener_sats: listener_cost,
         credits_remaining,
         credits_depleted,

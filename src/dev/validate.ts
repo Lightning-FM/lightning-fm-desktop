@@ -240,18 +240,17 @@ export async function runValidation() {
       if (!String(e).includes("already running")) throw e;
     }
 
-    // ── 1.7 — mirror rake split ────────────────────────────────────────
+    // ── 1.7 — no rake on mirror-served tracks ──────────────────────────
     await startSession("validate-1.7", null, false);
     const t7 = await invoke<{
       artist_sats: number;
-      platform_sats: number;
       listener_sats: number;
     }>("stream_tick");
     await invoke("stream_stop");
     record(
-      "1.7 mirror-rake",
-      t7.artist_sats === 90 && t7.platform_sats === 10 && t7.listener_sats === 100,
-      `${t7.artist_sats}/${t7.platform_sats}/${t7.listener_sats}`,
+      "1.7 no-rake",
+      t7.artist_sats === 100 && t7.listener_sats === 100,
+      `${t7.artist_sats}/${t7.listener_sats}`,
     );
 
     // ── 2.4 — withdrawal address network validation ────────────────────

@@ -363,13 +363,35 @@ pub async fn publish_track(
     image_url: Option<&str>,
     extras: &TrackExtras,
 ) -> Result<String, String> {
+    // Interop note: kind 31337 has no merged NIP. Two definitions compete —
+    // the community registry-of-kinds (requires d/type/media) and the draft
+    // NIP in nips PR #1043 (requires d/media/imeta/title/subject). We emit a
+    // superset so conforming readers on either side can parse us, while our
+    // own richer tags below stay where our parser already expects them.
     let mut tags = vec![
         Tag::custom(TagKind::custom("d"), vec![slug.to_string()]),
         Tag::custom(TagKind::custom("title"), vec![title.to_string()]),
+        // `subject` mirrors `title` for PR #1043 readers.
+        Tag::custom(TagKind::custom("subject"), vec![title.to_string()]),
+        // `type` and `media` are the registry-of-kinds required pair;
+        // `media` carries the same URL as our `url` tag.
+        Tag::custom(TagKind::custom("type"), vec!["audio".to_string()]),
+        Tag::custom(TagKind::custom("media"), vec![audio_url.to_string()]),
         Tag::custom(TagKind::custom("x"), vec![audio_hash.to_string()]),
         Tag::custom(TagKind::custom("url"), vec![audio_url.to_string()]),
         Tag::custom(TagKind::custom("m"), vec![mime_type.to_string()]),
         Tag::custom(TagKind::custom("size"), vec![file_size.to_string()]),
+        // NIP-92 imeta: the same file facts packed into one tag, which is
+        // what PR #1043 readers look for.
+        Tag::custom(
+            TagKind::custom("imeta"),
+            vec![
+                format!("url {}", audio_url),
+                format!("m {}", mime_type),
+                format!("x {}", audio_hash),
+                format!("size {}", file_size),
+            ],
+        ),
     ];
 
     if let Some(fallback) = fallback_url {
