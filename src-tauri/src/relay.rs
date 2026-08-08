@@ -42,6 +42,35 @@ fn get_relays() -> Vec<String> {
 /// Custom event kind for track metadata
 const KIND_TRACK: u16 = 31337;
 
+/// NIP-89 `client` tag, attached to everything we publish.
+///
+/// Does double duty. It is the NIP-89 backlink to our kind 31990 handler
+/// event, so any client that meets one of our events can find out what
+/// opens it. And it is the discriminator our own relay queries need:
+/// kind 31337 is shared ground, and roughly 93% of the 31337 traffic on
+/// public relays is not music at all (podcast ad metadata, DVM service
+/// listings, game lobby state, enclave attestations). Filtering on kind
+/// alone is not enough.
+///
+/// The coordinate must match what scripts/publish-nip89-handler.mjs
+/// publishes on the marketing site.
+const CLIENT_NAME: &str = "Lightning FM";
+const HANDLER_COORD: &str =
+    "31990:5d2ffec27aa3833b56ba87b250804e29993474e14d4ce240f321d3e3fdf2f382:lightning-fm";
+const HANDLER_RELAY: &str = "wss://relay.lightning.fm";
+
+/// Build the NIP-89 client tag: ["client", name, handler-coordinate, relay].
+pub fn client_tag() -> Tag {
+    Tag::custom(
+        TagKind::custom("client"),
+        vec![
+            CLIENT_NAME.to_string(),
+            HANDLER_COORD.to_string(),
+            HANDLER_RELAY.to_string(),
+        ],
+    )
+}
+
 /// Shared relay client state
 pub struct RelayState {
     pub client: TokioMutex<Option<Arc<Client>>>,
@@ -369,6 +398,7 @@ pub async fn publish_track(
     // superset so conforming readers on either side can parse us, while our
     // own richer tags below stay where our parser already expects them.
     let mut tags = vec![
+        client_tag(),
         Tag::custom(TagKind::custom("d"), vec![slug.to_string()]),
         Tag::custom(TagKind::custom("title"), vec![title.to_string()]),
         // `subject` mirrors `title` for PR #1043 readers.

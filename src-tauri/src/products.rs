@@ -108,6 +108,7 @@ pub fn validate_draft(draft: &ProductDraft) -> Result<(), String> {
 /// Build the tag set for a kind 30402 product event. Pure — testable.
 pub fn build_product_tags(draft: &ProductDraft, status: &str) -> Vec<Tag> {
     let mut tags = vec![
+        crate::relay::client_tag(),
         Tag::custom(TagKind::custom("d"), vec![draft.slug.clone()]),
         Tag::custom(TagKind::custom("title"), vec![draft.title.clone()]),
         Tag::custom(
