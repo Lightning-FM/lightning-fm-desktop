@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:dev:private": "LFM_NOSTR_RELAYS=ws://localhost:7777 LFM_blossom_server=http://localhost:7778 LFM_KEYRING_SERVICE=fm.lightning.desktop.private tauri dev"
+    "tauri:dev:private": "LFM_NOSTR_RELAYS=ws://localhost:7777 LFM_blossom_server=http://localhost:7778 LFM_KEYRING_SERVICE=fm.lightning.desktop.private tauri dev",
+    "tauri:dev:purchases": "sh -c '. ../private-net/data/purchase.env && LFM_NOSTR_RELAYS=ws://localhost:7777 LFM_blossom_server=http://localhost:7778 LFM_KEYRING_SERVICE=fm.lightning.desktop.private tauri dev'"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
