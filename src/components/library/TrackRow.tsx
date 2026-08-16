@@ -11,6 +11,9 @@ interface TrackRowProps {
   showArtwork?: boolean;
   onPlay: (track: LibraryTrack) => void;
   onBuy?: (track: LibraryTrack) => void;
+  /** When set, the row grows an expand toggle for a details panel */
+  expanded?: boolean;
+  onToggleExpand?: (track: LibraryTrack) => void;
 }
 
 function formatDuration(secs: number): string {
@@ -18,6 +21,29 @@ function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Mime type → short codec label so the column never overflows the row
+const FORMAT_LABELS: Record<string, string> = {
+  "audio/mpeg": "MP3",
+  "audio/mp3": "MP3",
+  "audio/mp4": "AAC",
+  "audio/aac": "AAC",
+  "audio/x-m4a": "M4A",
+  "audio/flac": "FLAC",
+  "audio/x-flac": "FLAC",
+  "audio/wav": "WAV",
+  "audio/x-wav": "WAV",
+  "audio/ogg": "OGG",
+  "audio/opus": "OPUS",
+};
+
+export function formatLabel(mime: string): string {
+  const key = mime.toLowerCase().split(";")[0].trim();
+  if (FORMAT_LABELS[key]) return FORMAT_LABELS[key];
+  // Fall back to the mime subtype, clipped to fit the column
+  const subtype = key.split("/")[1] ?? key;
+  return subtype.toUpperCase().slice(0, 4);
 }
 
 export function TrackRow({
@@ -29,6 +55,8 @@ export function TrackRow({
   showArtwork = false,
   onPlay,
   onBuy,
+  expanded,
+  onToggleExpand,
 }: TrackRowProps) {
   return (
     <div
@@ -103,8 +131,24 @@ export function TrackRow({
 
       {/* Format badge */}
       <span className="font-small text-muted-foreground shrink-0 w-10 text-right">
-        {track.format}
+        {formatLabel(track.format)}
       </span>
+
+      {/* Expand toggle */}
+      {onToggleExpand && (
+        <button
+          className={`shrink-0 w-5 font-small transition-colors ${
+            expanded ? "text-amber" : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleExpand(track);
+          }}
+          aria-label={expanded ? "Collapse track details" : "Expand track details"}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
+      )}
     </div>
   );
 }

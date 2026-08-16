@@ -5,11 +5,14 @@ import type { ProductInfo } from "../../types/streaming";
 export interface LibraryTrack {
   title: string;
   artist: string;
+  /** Artist's kind-0 about text, when published */
+  artistAbout: string | null;
   album: string;
   hash: string;
   cachePath: string;
   duration: number; // seconds
   format: string;
+  fileSize: number | null; // bytes, when the event declares it
   artworkDataUrl: string | null;
   // Nostr event data (null for local test tracks)
   eventId: string | null;
@@ -24,6 +27,7 @@ export interface LibraryTrack {
 
 export interface ArtistGroup {
   name: string;
+  about: string | null; // artist's kind-0 about text
   tracks: LibraryTrack[];
   artworkDataUrl: string | null; // first track's artwork
   trackCount: number;

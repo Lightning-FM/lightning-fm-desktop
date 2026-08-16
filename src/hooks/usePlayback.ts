@@ -60,6 +60,9 @@ export function usePlayback(): UsePlaybackReturn {
       );
       filePath = result.cache_path;
       track.cachePath = filePath;
+      // Re-set state with a fresh object so consumers (e.g. the player
+      // waveform, which needs the local path) see the cachePath update
+      setActiveTrack({ ...track });
     }
 
     const dataUrl = await invoke<string>("playback_read_audio", { filePath });
@@ -74,11 +77,9 @@ export function usePlayback(): UsePlaybackReturn {
     if (isPlayingRef.current) {
       audioRef.current.pause();
       setIsPlaying(false);
-      invoke("stream_pause").catch(() => {});
     } else {
       audioRef.current.play();
       setIsPlaying(true);
-      invoke("stream_resume").catch(() => {});
     }
   }, []);
 

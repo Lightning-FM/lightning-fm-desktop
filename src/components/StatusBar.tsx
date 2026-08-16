@@ -1,20 +1,15 @@
 import { memo } from "react";
-import type { CreditsInfo, IdentityInfo } from "../types/streaming";
+import type { IdentityInfo } from "../types/streaming";
 
 interface StatusBarProps {
   trackCount: number;
   identity: IdentityInfo | null;
-  credits: CreditsInfo | null;
-  satsPaid: number;
-  hasSession: boolean;
   onSignIn: () => void;
 }
 
 export const StatusBar = memo(function StatusBar({
   trackCount,
   identity,
-  satsPaid,
-  hasSession,
   onSignIn,
 }: StatusBarProps) {
   return (
@@ -33,14 +28,6 @@ export const StatusBar = memo(function StatusBar({
           onClick={onSignIn}
         >
           Sign In
-        </span>
-      )}
-      {/* Streaming-credits balance intentionally not shown: listening is
-          free (decision:lfm_pivot_free_listening_monetize_goods) and the
-          1,000-sat welcome-credits figure was simulation-era noise. */}
-      {hasSession && (
-        <span className="font-small text-amber ml-auto">
-          &#9889; {satsPaid} sats paid
         </span>
       )}
     </div>

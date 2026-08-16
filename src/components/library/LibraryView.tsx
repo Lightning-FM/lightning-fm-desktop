@@ -92,9 +92,13 @@ export function LibraryView({
         if (!existing.artworkDataUrl && track.artworkDataUrl) {
           existing.artworkDataUrl = track.artworkDataUrl;
         }
+        if (!existing.about && track.artistAbout) {
+          existing.about = track.artistAbout;
+        }
       } else {
         groups.set(track.artist, {
           name: track.artist,
+          about: track.artistAbout,
           tracks: [track],
           artworkDataUrl: track.artworkDataUrl,
           trackCount: 1,

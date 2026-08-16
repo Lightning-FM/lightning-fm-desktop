@@ -10,7 +10,7 @@ import { StatusBar } from "./components/StatusBar";
 import { GetStarted } from "./components/GetStarted";
 import { PlayerBar } from "./components/player/PlayerBar";
 import { usePlayback } from "./hooks/usePlayback";
-import { useStreaming } from "./hooks/useStreaming";
+import { usePaymentEvents } from "./hooks/usePaymentEvents";
 import type { LibraryTrack } from "./components/library";
 import type { IdentityInfo, CatalogItem, ProductInfo } from "./types/streaming";
 import "./globals.css";
@@ -28,11 +28,7 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   const { state: playback, actions: playbackActions, refs: playbackRefs } = usePlayback();
-  const { state: streaming, actions: streamingActions } = useStreaming(
-    playback.isPlaying,
-    playbackRefs.audioRef,
-    playbackActions.setIsPlaying,
-  );
+  const paymentEvent = usePaymentEvents();
 
   // On mount: check identity, then connect relays and load catalog (always)
   useEffect(() => {
@@ -56,7 +52,6 @@ function App() {
   // When identity becomes available: activate authenticated features
   useEffect(() => {
     if (identity) {
-      streamingActions.loadCredits();
       startLdkNode();
     }
   }, [identity]);
@@ -122,11 +117,13 @@ function App() {
       setTracks(catalog.map(t => ({
         title: t.title,
         artist: t.artistName || t.artistNpub.slice(0, 12) + "...",
+        artistAbout: t.artistAbout || null,
         album: "",
         hash: t.audioHash || t.eventId,
         cachePath: "",
         duration: t.durationSecs || 0,
         format: t.mimeType || "audio/mpeg",
+        fileSize: t.fileSize || null,
         artworkDataUrl: t.imageUrl || t.artistPicture || null,
         eventId: t.eventId,
         artistPubkey: t.artistPubkey,
@@ -142,17 +139,13 @@ function App() {
     setLoading(false);
   }
 
-  // Combined play: starts audio + streaming session in parallel
   const handlePlayTrack = useCallback(async (track: LibraryTrack) => {
-    // Start streaming session in parallel — doesn't block playback
-    streamingActions.startStreamSession(track, identity);
-
     try {
       await playbackActions.playTrack(track);
     } catch (e) {
       console.error("Audio play failed:", e);
     }
-  }, [identity, playbackActions.playTrack, streamingActions.startStreamSession]);
+  }, [playbackActions.playTrack]);
 
   // Prev/next track navigation for PlayerBar
   const handlePrevTrack = useCallback(() => {
@@ -177,15 +170,12 @@ function App() {
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* ── Payment Notification (floating) ── */}
-      <PaymentNotification event={streaming.paymentEvent} />
+      <PaymentNotification event={paymentEvent} />
 
       {/* ── Status Bar (pinned top) ── */}
       <StatusBar
         trackCount={tracks.length}
         identity={identity}
-        credits={streaming.credits}
-        satsPaid={streaming.satsPaid}
-        hasSession={!!streaming.session}
         onSignIn={() => setView("settings")}
       />
 
@@ -241,7 +231,7 @@ function App() {
               </div>
             </div>
           ) : view === "dashboard" ? (
-            <DashboardView />
+            <DashboardView identity={identity} onNavigate={(v) => setView(v)} />
           ) : view === "settings" && identity ? (
             <SettingsView npub={identity.npub} />
           ) : (
@@ -261,7 +251,6 @@ function App() {
           isPlaying={playback.isPlaying}
           currentTime={playback.currentTime}
           duration={playback.duration}
-          session={streaming.session}
           onTogglePlayPause={playbackActions.togglePlayPause}
           onSeek={playbackActions.seek}
           onPrevTrack={handlePrevTrack}

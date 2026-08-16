@@ -281,6 +281,7 @@ pub struct CatalogItem {
     pub artist_npub: String,
     pub artist_name: Option<String>,
     pub artist_picture: Option<String>,
+    pub artist_about: Option<String>,
     pub title: String,
     pub slug: String,
     pub duration_secs: Option<u64>,
@@ -328,6 +329,7 @@ pub async fn load_catalog(
         CatalogItem {
             artist_name: profile.and_then(|p| p.display_name.clone().or(p.name.clone())),
             artist_picture: profile.and_then(|p| p.picture.clone()),
+            artist_about: profile.and_then(|p| p.about.clone()),
             event_id: t.event_id,
             artist_pubkey: t.artist_pubkey,
             artist_npub: t.artist_npub,

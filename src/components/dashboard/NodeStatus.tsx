@@ -65,7 +65,7 @@ export function NodeStatus({ nodeInfo, balance, onStartNode, onStopNode }: NodeS
           <div className="flex items-baseline gap-2">
             <span className="font-label-mono text-muted-foreground w-16 shrink-0">Mode</span>
             <span className="font-small text-secondary-foreground">
-              {nodeInfo.artist_mode ? "Artist (listening)" : "Listener"}
+              {nodeInfo.artist_mode ? "Artist" : "Listener"}
             </span>
           </div>
 

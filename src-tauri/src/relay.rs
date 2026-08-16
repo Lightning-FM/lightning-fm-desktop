@@ -482,8 +482,38 @@ pub async fn publish_track(
     let builder = EventBuilder::new(Kind::Custom(KIND_TRACK), content)
         .tags(tags);
 
-    let output = client.send_event_builder(builder).await
-        .map_err(|e| format!("Failed to publish track: {}", e))?;
+    // Guard: a dev build reads the public catalog relay alongside localhost
+    // (see DEV_RELAYS), so a localhost media URL broadcast normally would land
+    // on the public relay and break the track for everyone but this machine
+    // (happened 2026-08-05 to cypherpunk-lullaby). Localhost media publishes
+    // only to localhost relays.
+    let is_local_url = |u: &str| u.contains("localhost") || u.contains("127.0.0.1");
+    let has_local_media =
+        is_local_url(audio_url) || image_url.is_some_and(is_local_url);
+
+    let output = if has_local_media {
+        let local_relays: Vec<String> = get_relays()
+            .into_iter()
+            .filter(|r| is_local_url(r))
+            .collect();
+        if local_relays.is_empty() {
+            return Err(
+                "Refusing to publish: media URLs point at localhost but no local relay is \
+                 configured. Upload to a public Blossom server (LFM_ENV=production or \
+                 LFM_blossom_server) or add a local relay."
+                    .to_string(),
+            );
+        }
+        log::warn!(
+            "Track '{}' has localhost media URLs — publishing to local relays only: {:?}",
+            title, local_relays
+        );
+        client.send_event_builder_to(local_relays, builder).await
+            .map_err(|e| format!("Failed to publish track: {}", e))?
+    } else {
+        client.send_event_builder(builder).await
+            .map_err(|e| format!("Failed to publish track: {}", e))?
+    };
 
     let event_id = output.id().to_hex();
     log::info!("Published track '{}' as event {}", title, event_id);

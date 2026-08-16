@@ -22,8 +22,8 @@ export function EarningsFeed({ entries }: EarningsFeedProps) {
           Activity
         </div>
         <div className="font-body-mono text-muted-foreground">
-          No payments yet — earnings will appear here as listeners stream your
-          music.
+          No payments yet — activity will appear here as sales and zaps reach
+          your node.
         </div>
       </div>
     );
