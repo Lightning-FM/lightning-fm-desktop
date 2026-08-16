@@ -1,8 +1,13 @@
 // Identity onboarding — shown on first launch or when no identity exists.
 // Two paths: create new identity or import existing nsec.
+// UX patterns from document:lfm_buzz_onboarding_ux_study: the nsec stays
+// masked until an explicit reveal/copy, Continue gates on that interaction
+// (not a checkbox), and an imported key gets a bounded profile check so
+// returning artists skip straight into the app.
 
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MaskedNsec } from "../MaskedNsec";
 
 interface IdentityInfo {
   npub: string;
@@ -13,8 +18,11 @@ interface IdentityInfo {
 
 type OnboardingStep = "choice" | "create" | "import" | "backup";
 
+/** Where the app should land after onboarding finishes */
+export type OnboardingLanding = "library" | "upload" | "settings";
+
 interface OnboardingViewProps {
-  onComplete: (identity: IdentityInfo) => void;
+  onComplete: (identity: IdentityInfo, landing: OnboardingLanding) => void;
   onCancel?: () => void;
 }
 
@@ -24,9 +32,11 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
   const [nsecInput, setNsecInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [importPhase, setImportPhase] = useState<"idle" | "importing" | "checking">("idle");
   const [createdIdentity, setCreatedIdentity] = useState<IdentityInfo | null>(null);
-  const [backupNsec, setBackupNsec] = useState("");
-  const [backupConfirmed, setBackupConfirmed] = useState(false);
+  // Interaction gate: flips when the user reveals or copies the key.
+  // Strictly more honest than a checkbox at the same friction.
+  const [keyInteracted, setKeyInteracted] = useState(false);
 
   async function handleCreate() {
     if (!displayName.trim()) {
@@ -42,11 +52,6 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
         displayName: displayName.trim(),
       });
       setCreatedIdentity(identity);
-
-      // Export nsec for backup step
-      const nsec = await invoke<string>("identity_export_nsec");
-      setBackupNsec(nsec);
-
       setStep("backup");
     } catch (e) {
       setError(String(e));
@@ -62,17 +67,35 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
     }
 
     setLoading(true);
+    setImportPhase("importing");
     setError("");
 
     try {
       const identity = await invoke<IdentityInfo>("identity_import", {
         nsec: nsecInput.trim(),
       });
-      onComplete(identity);
+
+      // Returning-artist check: a published kind 0 means this key has been
+      // here (or on some Nostr client) before — land straight in the app.
+      // No profile → route to Settings to publish one. Any error fails
+      // open to the profile path; the check must never strand onboarding.
+      setImportPhase("checking");
+      let hasProfile = false;
+      try {
+        const profile = await invoke<{ display_name: string | null } | null>(
+          "profile_fetch"
+        );
+        hasProfile = profile !== null;
+      } catch (e) {
+        console.warn("Profile check failed (continuing to settings):", e);
+      }
+
+      onComplete(identity, hasProfile ? "library" : "settings");
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
+      setImportPhase("idle");
     }
   }
 
@@ -89,7 +112,8 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
           console.warn("Could not publish profile during onboarding:", e);
         }
       }
-      onComplete(createdIdentity);
+      // A brand-new artist lands on Upload — the thing they came to do
+      onComplete(createdIdentity, "upload");
     }
   }
 
@@ -231,7 +255,11 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
                 onClick={handleImport}
                 disabled={loading}
               >
-                {loading ? "Importing..." : "Import Key"}
+                {importPhase === "importing"
+                  ? "Importing..."
+                  : importPhase === "checking"
+                    ? "Looking for your profile..."
+                    : "Import Key"}
               </button>
             </div>
 
@@ -259,33 +287,27 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
               </div>
             </div>
 
-            {/* nsec (secret, backup) */}
+            {/* nsec (secret, backup) — masked until reveal/copy */}
             <div>
               <label className="font-label-mono text-error uppercase tracking-wider text-[10px]">
                 Your Secret Key (keep private)
               </label>
-              <div className="mt-1 px-2 py-1.5 border border-error/30 bg-error/5 font-small text-foreground break-all select-all cursor-text">
-                {backupNsec}
+              <div className="mt-1">
+                <MaskedNsec onInteract={() => setKeyInteracted(true)} />
               </div>
             </div>
 
-            {/* Confirmation checkbox */}
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={backupConfirmed}
-                onChange={(e) => setBackupConfirmed(e.target.checked)}
-                className="w-4 h-4 accent-amber"
-              />
-              <span className="font-body-mono text-secondary-foreground">
-                I've saved my secret key somewhere safe
-              </span>
-            </label>
+            <div className="font-small text-muted-foreground">
+              Never share this key. Anyone who has it can impersonate you and
+              take your payouts. Copy it into a password manager — and you can
+              always view it again in Settings → Identity.
+            </div>
 
             <button
               className="h-8 px-4 border border-amber text-amber font-label-mono uppercase tracking-wider text-[11px] hover:bg-amber/10 transition-all disabled:opacity-50"
               onClick={handleBackupComplete}
-              disabled={!backupConfirmed}
+              disabled={!keyInteracted}
+              title={keyInteracted ? undefined : "Reveal or copy your key first"}
             >
               Continue to Lightning FM
             </button>

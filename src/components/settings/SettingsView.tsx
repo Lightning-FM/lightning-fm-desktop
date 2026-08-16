@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MaskedNsec } from "../MaskedNsec";
 
 interface ProfileData {
   name: string | null;
@@ -442,6 +443,18 @@ function IdentitySection({ npub }: { npub: string }) {
       <div className="font-mono text-[11px] text-secondary-foreground break-all mb-6">
         {npub}
       </div>
+
+      <div className="font-label-mono text-[var(--error)] uppercase tracking-wider text-[10px] mb-1">
+        Secret key
+      </div>
+      <div className="mb-2">
+        <MaskedNsec />
+      </div>
+      <p className="font-small text-muted-foreground mb-6">
+        Never share this key. Anyone who has it can impersonate you and take
+        your payouts. Keep a copy in a password manager — it&apos;s the only
+        way back into this identity if this Mac dies.
+      </p>
 
       {error && (
         <p className="font-small text-[var(--error)] mb-3">{error}</p>
