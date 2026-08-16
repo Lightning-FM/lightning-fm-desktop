@@ -220,6 +220,59 @@ pub fn identity_export_nsec(state: State<IdentityState>) -> Result<String, Strin
     }
 }
 
+/// Write a NIP-49 password-encrypted backup of the secret key to `path`.
+/// The key never transits the frontend — Rust encrypts and writes the file.
+#[tauri::command]
+pub async fn identity_backup_encrypted(
+    path: String,
+    password: String,
+    state: State<'_, IdentityState>,
+) -> Result<(), String> {
+    if password.len() < 8 {
+        return Err("Password must be at least 8 characters".to_string());
+    }
+    let keys = state
+        .keys
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("No identity loaded")?;
+
+    // scrypt at 2^16 rounds is CPU-heavy — keep it off the async runtime
+    tauri::async_runtime::spawn_blocking(move || {
+        let ncryptsec = crate::identity::encrypt_nsec(&keys, &password)?;
+        std::fs::write(&path, ncryptsec)
+            .map_err(|e| format!("Couldn't write the backup file: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Backup task failed: {}", e))?
+}
+
+/// Verify a backup file: decrypt with the password and confirm it holds
+/// the currently loaded identity. Ok(false) = valid backup, different key.
+#[tauri::command]
+pub async fn identity_verify_backup(
+    path: String,
+    password: String,
+    state: State<'_, IdentityState>,
+) -> Result<bool, String> {
+    let expected = state
+        .keys
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("No identity loaded")?
+        .public_key();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Couldn't read the backup file: {}", e))?;
+        crate::identity::verify_ncryptsec(&content, &password, &expected)
+    })
+    .await
+    .map_err(|e| format!("Verify task failed: {}", e))?
+}
+
 #[tauri::command]
 pub async fn identity_delete(
     state: State<'_, IdentityState>,

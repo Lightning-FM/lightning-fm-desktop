@@ -219,7 +219,13 @@ function App() {
         {/* ── Main View ── */}
         <div className="flex-1 min-h-0">
           {view === "upload" ? (
-            <UploadView />
+            <UploadView
+              ownTrackCount={
+                identity
+                  ? tracks.filter((t) => t.artistPubkey === identity.pubkey_hex).length
+                  : 0
+              }
+            />
           ) : view === "library" ? (
             <div className="h-full flex flex-col">
               <GetStarted

@@ -1,11 +1,19 @@
 // Post-publish confirmation — shows published track details with Nostr event info.
 // Displayed after all tracks in a batch have been successfully published.
+// When this was the artist's first-ever publish (derived from the catalog,
+// no stored flag), the confirmation opens with a one-time kickoff moment —
+// facts only, per document:lfm_buzz_onboarding_ux_study.
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { UploadTrack } from "./types";
 
 interface PublishConfirmationProps {
   tracks: UploadTrack[];
   onUploadMore: () => void;
+  /** True when the artist had no tracks in the catalog before this publish */
+  firstUpload?: boolean;
+  /** Artist npub, for the public storefront link */
+  npub?: string | null;
 }
 
 function truncateHash(hash: string, len = 12): string {
@@ -22,20 +30,49 @@ function formatDuration(secs: number): string {
 export function PublishConfirmation({
   tracks,
   onUploadMore,
+  firstUpload = false,
+  npub = null,
 }: PublishConfirmationProps) {
+  const anySelling = tracks.some((t) => t.sellEnabled);
+
   return (
     <div className="flex flex-col flex-1 overflow-y-auto">
-      {/* Success banner */}
-      <div className="shrink-0 px-6 py-6 border-b border-border text-center">
-        <div className="font-heading-2 text-[var(--success)] mb-2">
-          {tracks.length === 1
-            ? "TRACK PUBLISHED"
-            : `${tracks.length} TRACKS PUBLISHED`}
+      {/* First-upload kickoff — one-time by construction: it only renders
+          on the confirmation of the publish that took the artist 0 → 1 */}
+      {firstUpload ? (
+        <div className="shrink-0 px-6 py-8 border-b border-amber/40 bg-amber/5 text-center">
+          <div className="font-heading-2 text-amber mb-2">
+            ⚡ YOU&apos;RE ON LIGHTNING FM
+          </div>
+          <div className="font-body-mono text-secondary-foreground max-w-lg mx-auto">
+            {tracks.length === 1 ? "Your first track is" : "Your first tracks are"}{" "}
+            live — Nostr events signed by your key, on your public page for
+            anyone to stream free.
+            {anySelling
+              ? " Buyers pay your wallet directly; we never touch the money."
+              : ""}
+          </div>
+          {npub && (
+            <button
+              className="h-9 px-6 mt-4 border border-amber text-amber font-label-mono uppercase tracking-wider hover:bg-amber/10 transition-all text-[11px]"
+              onClick={() => openUrl(`https://lightning.fm/a/${npub}`)}
+            >
+              View your public page
+            </button>
+          )}
         </div>
-        <div className="font-body-mono text-secondary-foreground">
-          Your music is live on Nostr relays and available via Blossom CDN.
+      ) : (
+        <div className="shrink-0 px-6 py-6 border-b border-border text-center">
+          <div className="font-heading-2 text-[var(--success)] mb-2">
+            {tracks.length === 1
+              ? "TRACK PUBLISHED"
+              : `${tracks.length} TRACKS PUBLISHED`}
+          </div>
+          <div className="font-body-mono text-secondary-foreground">
+            Your music is live on Nostr relays and available via Blossom CDN.
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Published tracks list */}
       <div className="flex-1 p-6 flex flex-col gap-4">

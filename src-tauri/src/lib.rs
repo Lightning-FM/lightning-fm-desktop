@@ -25,6 +25,7 @@ use commands::{
     ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address, ldk_get_mnemonic,
     // Nostr identity
     identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
+    identity_backup_encrypted, identity_verify_backup,
     // Relay & browse
     relay_connect, browse_tracks, load_catalog,
     // Profile
@@ -67,6 +68,7 @@ pub fn run() {
             ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address, ldk_get_mnemonic,
             // Nostr identity
             identity_check, identity_create, identity_import, identity_export_nsec, identity_delete,
+            identity_backup_encrypted, identity_verify_backup,
             // Relay & browse
             relay_connect, browse_tracks, load_catalog,
             // Profile

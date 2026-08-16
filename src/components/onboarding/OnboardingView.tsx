@@ -2,12 +2,15 @@
 // Two paths: create new identity or import existing nsec.
 // UX patterns from document:lfm_buzz_onboarding_ux_study: the nsec stays
 // masked until an explicit reveal/copy, Continue gates on that interaction
-// (not a checkbox), and an imported key gets a bounded profile check so
-// returning artists skip straight into the app.
+// (not a checkbox), an imported key gets a bounded profile check so
+// returning artists skip straight into the app, and the create path ends
+// with an optional, skippable wallet step so artists exit sale-ready.
 
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { MaskedNsec } from "../MaskedNsec";
+import { EncryptedBackup } from "../EncryptedBackup";
 
 interface IdentityInfo {
   npub: string;
@@ -16,7 +19,15 @@ interface IdentityInfo {
   display_name: string | null;
 }
 
-type OnboardingStep = "choice" | "create" | "import" | "backup";
+interface WalletCheck {
+  ok: boolean;
+  lud16: string;
+  provider: string | null;
+  verify_supported: boolean;
+  error: string | null;
+}
+
+type OnboardingStep = "choice" | "create" | "import" | "backup" | "wallet";
 
 /** Where the app should land after onboarding finishes */
 export type OnboardingLanding = "library" | "upload" | "settings";
@@ -24,6 +35,32 @@ export type OnboardingLanding = "library" | "upload" | "settings";
 interface OnboardingViewProps {
   onComplete: (identity: IdentityInfo, landing: OnboardingLanding) => void;
   onCancel?: () => void;
+}
+
+// The create path's ceremony sequence, for the progress dots
+const CREATE_PATH: OnboardingStep[] = ["create", "backup", "wallet"];
+const CREATE_PATH_LABELS = ["Identity", "Backup", "Wallet"];
+
+function StepDots({ step }: { step: OnboardingStep }) {
+  const index = CREATE_PATH.indexOf(step);
+  if (index === -1) return null;
+  return (
+    <div className="flex items-center justify-center gap-2 mt-4">
+      {CREATE_PATH.map((s, i) => (
+        <span
+          key={s}
+          title={CREATE_PATH_LABELS[i]}
+          className={`inline-block h-1 transition-all ${
+            i === index
+              ? "w-6 bg-amber"
+              : i < index
+                ? "w-2 bg-amber/50"
+                : "w-2 bg-border"
+          }`}
+        />
+      ))}
+    </div>
+  );
 }
 
 export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
@@ -37,6 +74,10 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
   // Interaction gate: flips when the user reveals or copies the key.
   // Strictly more honest than a checkbox at the same friction.
   const [keyInteracted, setKeyInteracted] = useState(false);
+  // Wallet step
+  const [lud16, setLud16] = useState("");
+  const [walletCheck, setWalletCheck] = useState<WalletCheck | "checking" | null>(null);
+  const [finishing, setFinishing] = useState(false);
 
   async function handleCreate() {
     if (!displayName.trim()) {
@@ -99,22 +140,43 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
     }
   }
 
-  async function handleBackupComplete() {
-    if (createdIdentity) {
-      // Publish display name to Nostr profile if relays are connected.
-      // Non-blocking: onboarding completes even if relay publish fails.
-      if (createdIdentity.display_name) {
-        try {
-          await invoke("profile_set", {
-            displayName: createdIdentity.display_name,
-          });
-        } catch (e) {
-          console.warn("Could not publish profile during onboarding:", e);
-        }
-      }
-      // A brand-new artist lands on Upload — the thing they came to do
-      onComplete(createdIdentity, "upload");
+  async function handleWalletCheck() {
+    const address = lud16.trim();
+    if (!address) return;
+    setWalletCheck("checking");
+    try {
+      setWalletCheck(await invoke<WalletCheck>("wallet_check", { lud16: address }));
+    } catch (e) {
+      setWalletCheck({
+        ok: false,
+        lud16: address,
+        provider: null,
+        verify_supported: false,
+        error: String(e),
+      });
     }
+  }
+
+  // Finish the create path: publish the kind 0 once, with the lud16 riding
+  // along when the artist provided one. Non-blocking — onboarding completes
+  // even if the relay publish fails; Settings can republish later.
+  async function handleFinish(withAddress: boolean) {
+    if (!createdIdentity) return;
+    setFinishing(true);
+    const address = withAddress ? lud16.trim() : "";
+    if (createdIdentity.display_name) {
+      try {
+        await invoke("profile_set", {
+          displayName: createdIdentity.display_name,
+          lud16: address || null,
+        });
+      } catch (e) {
+        console.warn("Could not publish profile during onboarding:", e);
+      }
+    }
+    setFinishing(false);
+    // A brand-new artist lands on Upload — the thing they came to do
+    onComplete(createdIdentity, "upload");
   }
 
   return (
@@ -128,7 +190,9 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
             {step === "create" && "Create your identity"}
             {step === "import" && "Import existing identity"}
             {step === "backup" && "Back up your key"}
+            {step === "wallet" && "Where should the money go?"}
           </div>
+          <StepDots step={step} />
         </div>
 
         {/* ── Step: Choice ── */}
@@ -274,7 +338,7 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
         {step === "backup" && (
           <div className="flex flex-col gap-4">
             <div className="font-body-mono text-foreground">
-              Your identity has been created. <span className="text-amber">Write down your secret key</span> — it's the only way to recover your identity if you lose access to this device.
+              Your identity has been created. <span className="text-amber">Save your secret key</span> — it's the only way to recover your identity if you lose access to this device.
             </div>
 
             {/* npub (public, shareable) */}
@@ -303,14 +367,126 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
               always view it again in Settings → Identity.
             </div>
 
+            {/* Third option: password-encrypted file. Writing one counts as
+                a key interaction, same as reveal/copy. */}
+            {createdIdentity && (
+              <EncryptedBackup
+                npub={createdIdentity.npub}
+                onInteract={() => setKeyInteracted(true)}
+              />
+            )}
+
             <button
               className="h-8 px-4 border border-amber text-amber font-label-mono uppercase tracking-wider text-[11px] hover:bg-amber/10 transition-all disabled:opacity-50"
-              onClick={handleBackupComplete}
+              onClick={() => setStep("wallet")}
               disabled={!keyInteracted}
-              title={keyInteracted ? undefined : "Reveal or copy your key first"}
+              title={keyInteracted ? undefined : "Reveal, copy, or back up your key first"}
             >
-              Continue to Lightning FM
+              Continue
             </button>
+          </div>
+        )}
+
+        {/* ── Step: Wallet (optional, skippable) ── */}
+        {step === "wallet" && (
+          <div className="flex flex-col gap-4">
+            <div className="font-body-mono text-foreground">
+              When someone buys your music, they pay{" "}
+              <span className="text-amber">your wallet directly</span> — the
+              money never touches Lightning FM. Add a Lightning address now, or
+              skip and add it later.
+            </div>
+
+            <div>
+              <label className="font-label-mono text-muted-foreground uppercase tracking-wider text-[10px]">
+                Lightning Address
+              </label>
+              <input
+                type="text"
+                value={lud16}
+                onChange={(e) => {
+                  setLud16(e.target.value);
+                  setWalletCheck(null);
+                }}
+                placeholder="you@coinos.io"
+                autoFocus
+                className="w-full h-8 px-2 mt-1 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors"
+                onKeyDown={(e) => e.key === "Enter" && handleWalletCheck()}
+              />
+            </div>
+
+            {walletCheck === "checking" && (
+              <p className="font-small text-muted-foreground animate-pulse">
+                Checking your wallet: we request a test invoice to confirm it
+                works. It is never paid and expires on its own.
+              </p>
+            )}
+            {walletCheck !== null && walletCheck !== "checking" && (
+              <p
+                className={`font-small ${
+                  walletCheck.ok && walletCheck.verify_supported
+                    ? "text-amber"
+                    : "text-[var(--error)]"
+                }`}
+              >
+                {!walletCheck.ok
+                  ? `This address didn't return an invoice: ${walletCheck.error ?? "unknown error"}`
+                  : walletCheck.verify_supported
+                    ? `Wallet check passed — ${walletCheck.provider ?? "your provider"} issues invoices and confirms payments (LUD-21). You can sell downloads.`
+                    : `This wallet issues invoices but can't confirm payments (no LUD-21 support), so selling downloads won't work. Zaps are fine. Coinos and Alby support it.`}
+              </p>
+            )}
+
+            <div className="font-small text-muted-foreground">
+              No wallet yet?{" "}
+              <button
+                className="text-amber hover:underline"
+                onClick={() => openUrl("https://coinos.io")}
+              >
+                Coinos
+              </button>{" "}
+              and{" "}
+              <button
+                className="text-amber hover:underline"
+                onClick={() => openUrl("https://getalby.com")}
+              >
+                Alby
+              </button>{" "}
+              are free and take a minute — create one in your browser, then
+              paste the address here and check it.
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                className="h-8 px-4 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider text-[11px] hover:text-foreground transition-all"
+                onClick={() => setStep("backup")}
+              >
+                Back
+              </button>
+              <button
+                className="h-8 px-4 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider text-[11px] hover:text-foreground transition-all disabled:opacity-50"
+                onClick={handleWalletCheck}
+                disabled={!lud16.trim() || walletCheck === "checking"}
+              >
+                {walletCheck !== null && walletCheck !== "checking" ? "Check again" : "Check"}
+              </button>
+              <button
+                className="h-8 px-4 flex-1 border border-amber text-amber font-label-mono uppercase tracking-wider text-[11px] hover:bg-amber/10 transition-all disabled:opacity-50"
+                onClick={() => handleFinish(!!lud16.trim())}
+                disabled={finishing}
+              >
+                {finishing
+                  ? "Finishing..."
+                  : lud16.trim()
+                    ? "Save & Finish"
+                    : "Skip for now"}
+              </button>
+            </div>
+
+            <div className="font-small text-muted-foreground">
+              Skipping is fine — the Get Started checklist will remind you, and
+              it lives in Settings → Profile whenever you're ready.
+            </div>
           </div>
         )}
       </div>

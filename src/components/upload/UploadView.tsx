@@ -68,7 +68,13 @@ function extensionToFormat(ext: string): string {
   return map[ext.toLowerCase()] || ext.toUpperCase();
 }
 
-export function UploadView() {
+interface UploadViewProps {
+  /** The artist's track count in the catalog as of app load — 0 means the
+      next successful publish is their first, which earns the kickoff moment */
+  ownTrackCount?: number;
+}
+
+export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
   const [state, dispatch] = useReducer(uploadReducer, initialUploadState);
   const [identity, setIdentity] = useState<IdentityInfo | null | undefined>(undefined);
   const [showIdentityGate, setShowIdentityGate] = useState(false);
@@ -678,6 +684,8 @@ export function UploadView() {
         <PublishConfirmation
           tracks={state.tracks}
           onUploadMore={() => dispatch({ type: "CLEAR_PUBLISHED" })}
+          firstUpload={ownTrackCount === 0}
+          npub={identity?.npub ?? null}
         />
       </div>
     );

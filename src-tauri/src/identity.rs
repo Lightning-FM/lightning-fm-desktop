@@ -95,6 +95,43 @@ pub fn export_nsec(keys: &Keys) -> Result<String, String> {
     keys.secret_key().to_bech32().map_err(|e| format!("Failed to encode nsec: {}", e))
 }
 
+/// NIP-49 scrypt work factor — 2^16 rounds, the spec's recommended default.
+const NCRYPTSEC_LOG_N: u8 = 16;
+
+/// Encrypt the secret key to a NIP-49 ncryptsec string (password-protected
+/// backup file contents). scrypt at 2^16 is CPU-heavy — call from a
+/// blocking context.
+pub fn encrypt_nsec(keys: &Keys, password: &str) -> Result<String, String> {
+    let encrypted = EncryptedSecretKey::new(
+        keys.secret_key(),
+        password,
+        NCRYPTSEC_LOG_N,
+        // Medium: the key has lived encrypted-at-rest (Keychain) on this device
+        KeySecurity::Medium,
+    )
+    .map_err(|e| format!("Encryption failed: {}", e))?;
+    encrypted
+        .to_bech32()
+        .map_err(|e| format!("Failed to encode ncryptsec: {}", e))
+}
+
+/// Verify an ncryptsec backup: decrypt with the password and confirm it
+/// holds the same identity as `expected`. Distinct error strings let the
+/// UI tell "not a backup file" from "wrong password"; Ok(false) means the
+/// backup decrypted fine but belongs to a different identity.
+pub fn verify_ncryptsec(
+    content: &str,
+    password: &str,
+    expected: &PublicKey,
+) -> Result<bool, String> {
+    let encrypted = EncryptedSecretKey::from_bech32(content.trim())
+        .map_err(|_| "That file isn't an encrypted key backup (expected ncryptsec1…)".to_string())?;
+    let secret = encrypted
+        .to_secret_key(password)
+        .map_err(|_| "Wrong password — the backup couldn't be decrypted".to_string())?;
+    Ok(Keys::new(secret).public_key() == *expected)
+}
+
 /// Remove the stored identity from the keychain.
 pub fn delete_identity() -> Result<(), String> {
     let entry = Entry::new(KEYRING_SERVICE, KEYRING_NSEC)
@@ -145,6 +182,52 @@ mod tests {
         assert_eq!(info.pubkey_hex.len(), 64, "pubkey hex should be 64 chars");
         assert!(info.has_nsec);
         assert!(info.display_name.is_none());
+    }
+
+    // ─── NIP-49 encrypted backup tests ───────────────────────
+
+    #[test]
+    fn ncryptsec_roundtrips() {
+        let keys = Keys::generate();
+        let encrypted = encrypt_nsec(&keys, "correct horse battery").expect("encrypt");
+        assert!(encrypted.starts_with("ncryptsec1"), "should be bech32 ncryptsec");
+
+        let ok = verify_ncryptsec(&encrypted, "correct horse battery", &keys.public_key())
+            .expect("verify should decrypt");
+        assert!(ok, "same key should verify true");
+    }
+
+    #[test]
+    fn ncryptsec_wrong_password_is_distinct_error() {
+        let keys = Keys::generate();
+        let encrypted = encrypt_nsec(&keys, "right").expect("encrypt");
+        let err = verify_ncryptsec(&encrypted, "wrong", &keys.public_key()).unwrap_err();
+        assert!(err.contains("Wrong password"), "got: {}", err);
+    }
+
+    #[test]
+    fn ncryptsec_garbage_is_distinct_error() {
+        let keys = Keys::generate();
+        let err = verify_ncryptsec("not a backup", "pw", &keys.public_key()).unwrap_err();
+        assert!(err.contains("isn't an encrypted key backup"), "got: {}", err);
+    }
+
+    #[test]
+    fn ncryptsec_other_identity_verifies_false() {
+        let keys = Keys::generate();
+        let other = Keys::generate();
+        let encrypted = encrypt_nsec(&keys, "pw").expect("encrypt");
+        let ok = verify_ncryptsec(&encrypted, "pw", &other.public_key()).expect("decrypts fine");
+        assert!(!ok, "different identity should verify false");
+    }
+
+    #[test]
+    fn ncryptsec_tolerates_surrounding_whitespace() {
+        let keys = Keys::generate();
+        let encrypted = encrypt_nsec(&keys, "pw").expect("encrypt");
+        let padded = format!("  {}\n", encrypted);
+        let ok = verify_ncryptsec(&padded, "pw", &keys.public_key()).expect("verify");
+        assert!(ok);
     }
 
     #[test]
