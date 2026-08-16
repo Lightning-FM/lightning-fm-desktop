@@ -8,6 +8,14 @@ use serde::Serialize;
 use std::sync::Mutex;
 
 const KEYRING_SERVICE: &str = "fm.lightning.desktop";
+
+/// Keychain service namespace. The Keychain holds exactly one identity per
+/// service, so LFM_KEYRING_SERVICE gives a private test net its own slot —
+/// onboarding tests can create and delete identities forever without ever
+/// touching the real artist key.
+fn keyring_service() -> String {
+    std::env::var("LFM_KEYRING_SERVICE").unwrap_or_else(|_| KEYRING_SERVICE.to_string())
+}
 const KEYRING_NSEC: &str = "nostr-nsec";
 
 /// Shared identity state — holds the active keypair in memory
@@ -54,7 +62,7 @@ pub fn create_identity_with_name(display_name: Option<String>) -> Result<(Keys, 
 /// Load an existing identity from the OS keychain.
 /// Called on app launch to check if a returning user has a stored identity.
 pub fn load_identity_from_keychain() -> Result<Option<(Keys, IdentityInfo)>, String> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_NSEC)
+    let entry = Entry::new(&keyring_service(), KEYRING_NSEC)
         .map_err(|e| format!("Keyring access error: {}", e))?;
 
     match entry.get_password() {
@@ -134,7 +142,7 @@ pub fn verify_ncryptsec(
 
 /// Remove the stored identity from the keychain.
 pub fn delete_identity() -> Result<(), String> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_NSEC)
+    let entry = Entry::new(&keyring_service(), KEYRING_NSEC)
         .map_err(|e| format!("Keyring access error: {}", e))?;
 
     match entry.delete_credential() {
@@ -147,7 +155,7 @@ pub fn delete_identity() -> Result<(), String> {
 // ─── Internal helpers ───────────────────────────────────────
 
 fn store_nsec_in_keychain(keys: &Keys) -> Result<(), String> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_NSEC)
+    let entry = Entry::new(&keyring_service(), KEYRING_NSEC)
         .map_err(|e| format!("Keyring access error: {}", e))?;
 
     // Store as hex (more compact, easier to parse back)

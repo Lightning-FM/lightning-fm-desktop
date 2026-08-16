@@ -185,6 +185,15 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Platform disabled-state pattern: opacity alone reads as "still amber,
+     still clickable" on this palette. Every disabled control desaturates,
+     dims, and refuses the cursor — composes with any per-button
+     disabled:opacity-* utility without needing one. */
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    filter: grayscale(0.7) brightness(0.55);
+    cursor: not-allowed;
+  }
   body {
     @apply bg-background text-foreground font-sans;
     font-size: 14px;
