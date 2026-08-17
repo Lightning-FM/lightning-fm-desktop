@@ -1,8 +1,10 @@
 // Center pane — metadata editing form for the selected track
 
 import { useState, useEffect } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { UploadTrack } from "./types";
 import { Waveform } from "./Waveform";
+import { extensionToFormat } from "./format";
 
 interface TrackDetailProps {
   track: UploadTrack;
@@ -48,6 +50,28 @@ export function TrackDetail({
   const [showCredits, setShowCredits] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [tagsText, setTagsText] = useState(track.tags.join(", "));
+
+  // Pick the premium file buyers receive (lossless master, stems zip, ...)
+  async function pickArtifact() {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: "Audio or stems",
+          extensions: ["flac", "wav", "aiff", "aif", "alac", "m4a", "mp3", "zip"],
+        },
+      ],
+    });
+    if (!selected || Array.isArray(selected)) return;
+    const fileName = selected.split("/").pop() || selected;
+    const ext = fileName.split(".").pop() || "";
+    onUpdate({
+      artifactPath: selected,
+      artifactFileName: fileName,
+      artifactFormat: extensionToFormat(ext),
+    });
+  }
 
   // Reseed the tag text when a different track is selected
   useEffect(() => {
@@ -197,12 +221,64 @@ export function TrackDetail({
               Sell this track
             </span>
             <span className="font-small text-muted-foreground">
-              {track.format} download — streaming stays free
+              {track.artifactFormat ?? track.format} download, streaming stays
+              free
             </span>
           </label>
 
           {track.sellEnabled && (
             <div className="flex flex-col gap-3 pl-6">
+              {/* What the buyer receives */}
+              <div className="flex flex-col gap-2">
+                <span className="font-label-mono text-secondary-foreground uppercase tracking-wider text-[11px]">
+                  Buyers get
+                </span>
+                {track.artifactPath ? (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="font-body-mono text-foreground text-[12px] truncate"
+                      title={track.artifactPath}
+                    >
+                      {track.artifactFileName}
+                    </span>
+                    <span className="font-small text-muted-foreground shrink-0">
+                      {track.artifactFormat}
+                    </span>
+                    <button
+                      className="h-6 px-2 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider hover:border-[var(--text-muted)] hover:text-foreground transition-all text-[10px] shrink-0"
+                      onClick={pickArtifact}
+                    >
+                      Change
+                    </button>
+                    <button
+                      className="h-6 px-2 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider hover:border-[var(--text-muted)] hover:text-foreground transition-all text-[10px] shrink-0"
+                      onClick={() =>
+                        onUpdate({
+                          artifactPath: null,
+                          artifactFileName: null,
+                          artifactFormat: null,
+                        })
+                      }
+                    >
+                      Use stream file
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="font-small text-muted-foreground">
+                      The same {track.format} file that streams. Choose a
+                      premium version (lossless master, stems zip) to sell
+                      something the stream is not.
+                    </span>
+                    <button
+                      className="h-6 px-2 border border-border text-secondary-foreground font-label-mono uppercase tracking-wider hover:border-[var(--text-muted)] hover:text-foreground transition-all text-[10px] shrink-0"
+                      onClick={pickArtifact}
+                    >
+                      Choose file
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex gap-3 items-end">
                 <Field label="Price (sats)" className="w-32">
                   <input

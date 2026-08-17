@@ -5,6 +5,7 @@ import { useReducer, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { extensionToFormat } from "./format";
 import type { UploadTrack } from "./types";
 import { uploadReducer, initialUploadState } from "./reducer";
 import { DropZone } from "./DropZone";
@@ -53,20 +54,6 @@ function slugify(title: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function extensionToFormat(ext: string): string {
-  const map: Record<string, string> = {
-    wav: "WAV",
-    flac: "FLAC",
-    aiff: "AIFF",
-    aif: "AIFF",
-    mp3: "MP3",
-    ogg: "OGG",
-    m4a: "M4A",
-    aac: "AAC",
-    opus: "OPUS",
-  };
-  return map[ext.toLowerCase()] || ext.toUpperCase();
-}
 
 interface UploadViewProps {
   /** The artist's track count in the catalog as of app load — 0 means the
@@ -242,6 +229,9 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
         priceSats: 5000,
         nameYourPrice: false,
         floorSats: 0,
+        artifactPath: null,
+        artifactFileName: null,
+        artifactFormat: null,
 
         // State
         stage: "draft",
@@ -519,6 +509,12 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
         // doesn't roll back the publish.
         if (track.sellEnabled) {
           try {
+            // Buyers get the premium file when one was chosen; otherwise
+            // the sale delivers the same file that streams.
+            const artifactPath = track.artifactPath ?? track.filePath;
+            const artifactFormat = (
+              track.artifactFormat ?? track.format
+            ).toLowerCase();
             // Artifact first: the listing must never point at a product the
             // seller can't deliver
             let productEndpoint: string;
@@ -526,13 +522,13 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
               productEndpoint = await invoke<string>(
                 "product_upload_artifact_gate",
                 {
-                  filePath: track.filePath,
+                  filePath: artifactPath,
                   product: {
                     slug: slugify(track.title),
                     title: track.title,
                     priceSats: track.priceSats,
                     floorSats: track.nameYourPrice ? track.floorSats : null,
-                    format: track.format.toLowerCase(),
+                    format: artifactFormat,
                   },
                 }
               );
@@ -544,12 +540,12 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
               }
               productEndpoint = sellerEndpoint.trim();
               await invoke("product_upload_artifact", {
-                filePath: track.filePath,
+                filePath: artifactPath,
                 slug: slugify(track.title),
                 title: track.title,
                 priceSats: track.priceSats,
                 floorSats: track.nameYourPrice ? track.floorSats : null,
-                format: track.format.toLowerCase(),
+                format: artifactFormat,
                 endpoint: productEndpoint,
               });
             }
@@ -557,12 +553,12 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
               draft: {
                 slug: slugify(track.title),
                 title: track.title,
-                summary: `${track.format} download`,
+                summary: `${track.artifactFormat ?? track.format} download`,
                 description: track.description || null,
                 price_sats: track.nameYourPrice ? track.priceSats : track.priceSats,
                 floor_sats: track.nameYourPrice ? track.floorSats : null,
                 product_type: "track",
-                format: track.format.toLowerCase(),
+                format: artifactFormat,
                 image_url: null,
                 track_refs: [
                   `31337:${result.artist_pubkey}:${slugify(track.title)}`,

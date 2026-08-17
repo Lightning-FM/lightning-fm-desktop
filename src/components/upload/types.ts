@@ -52,6 +52,11 @@ export interface UploadTrack {
   priceSats: number; // listed/suggested price
   nameYourPrice: boolean; // when true, floorSats is the minimum
   floorSats: number;
+  // Premium file delivered to buyers (lossless master, stems zip, ...).
+  // When null the sale delivers the same file that streams.
+  artifactPath: string | null;
+  artifactFileName: string | null;
+  artifactFormat: string | null; // "FLAC", "ZIP", ... — drives the listing's format
 
   // Upload state
   stage: UploadStage;
