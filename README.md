@@ -1,102 +1,53 @@
-# Lightning FM — Desktop App
+# Lightning FM :: Desktop App
 
-Tauri v2 + React + Rust. Embedded Lightning node (LDK), Nostr identity, P2P music streaming.
+The artist and listener app for [Lightning FM](https://lightning.fm), a music platform using the [Bitcoin Lightning Network](https://lightning.network/) and [Nostr](https://nostr.org/) built around exit rights: your catalog is signed by your key, your money settles to your wallet, and leaving costs you nothing.
+
+Tauri v2 shell, React frontend, Rust backend with an embedded Lightning node ([ldk-node](https://github.com/lightningdevkit/ldk-node)). No external daemon required.
+
+## What it does
+
+- **Identity**: your Nostr key is created (or imported) locally and stored in the macOS Keychain. It never leaves your machine.
+- **Publish**: tracks upload to a Blossom media server and publish as kind 31337 Nostr events signed by your key, to the Lightning FM relay and public relays. The full wire format is documented at [lightning.fm/interop](https://lightning.fm/interop).
+- **Listen**: streaming is free, no account. The catalog is read from relays; audio is fetched by content hash from Blossom.
+- **Sell**: attach a purchasable download (lossless master, stems zip, or the stream file itself) to any track. Buyers pay an invoice minted by your own wallet, settlement confirms via LUD-21, and the download unlocks. Fulfillment runs through the hosted gate on lightning.fm or through [your own artist node](https://github.com/maml/lightning-fm-artist-nodes); either way the platform's cut is structurally 0% because the money never touches it.
+- **Run a node**: the embedded ldk-node opens channels, pays, and receives without any external Lightning software.
 
 ## Prerequisites
 
-- **Rust** (stable toolchain)
-- **Node.js** 22+
-- **Docker** (Colima or Docker Desktop) — for local dev services
+- Rust (stable toolchain)
+- Node.js 22+
+- macOS (Keychain-backed key storage; other platforms not yet supported)
+- Docker, only if you want the isolated local dev environment
 
-## Quick Start
+## Quick start
 
 ```sh
-# 1. Install dependencies
 npm install
+npm run tauri:dev
+```
 
-# 2. Start local dev services (Nostr relay + Blossom server)
-colima start                      # if using Colima for Docker
-cd dev && docker compose up -d    # relay on :7777, blossom on :3000
+For development against an isolated local relay and Blossom server instead of production infrastructure:
+
+```sh
+cd dev && docker compose up -d   # relay on :7777, blossom on :7778
 cd ..
-
-# 3. Run the app
-npx tauri dev
+npm run tauri:dev:private        # separate Keychain slot, local endpoints
 ```
 
-The app will:
-1. Check macOS Keychain for an existing Nostr identity
-2. Show onboarding if none found (create new or import nsec)
-3. Start the LDK Lightning node on Signet
-4. Load the test catalog from `test-data/`
+`tauri:dev:private` uses its own Keychain service name, so it never touches a real identity.
 
-## Dev Services
+## Layout
 
-Local infrastructure runs via Docker Compose in `dev/`:
+- `src/` React frontend (library, upload, dashboard, onboarding)
+- `src-tauri/src/` Rust backend: `node` (Lightning), `relay` (Nostr), `identity`, `upload`, `playback`, `streaming`, `products`, `purchases`, `metadata`, `waveform`
+- `dev/` local relay + Blossom compose for isolated development
 
-| Service | URL | Purpose |
-|---|---|---|
-| Nostr relay | `ws://localhost:7777` | Local Nostr events (kind 31337 tracks, kind 0 profiles) |
-| Blossom server | `http://localhost:3000` | Local audio file storage (PUT /upload, GET /:hash) |
+Frontend and backend communicate only through Tauri commands and events.
 
-```sh
-cd dev
-docker compose up -d      # start in background
-docker compose down        # stop
-docker compose down -v     # stop and delete all data
-docker compose logs -f     # tail logs
-```
+## About the launch catalog
 
-## Networks
+The catalog Lightning FM launched with was seeded by us: a handful of house-produced test artists, published with keys we held, used to exercise every rail (publishing, streaming, purchases, payouts) end to end before asking real artists to trust it. Those artists have since been retired to our private test network and their events deleted from the relays. Today's catalog is 0GGM3NT3D, which is the operator's own music, plus onboarded artists. We would rather say this plainly than have you discover it in the commit history; the same history also shows an early 10% hosting-fee experiment that was scrapped when the current pricing landed, and the commit that removed it.
 
-Everything defaults to local/test networks. **No live network connections in dev.**
+## License
 
-| Layer | Dev Default | Production (requires LFM_ENV=production) |
-|---|---|---|
-| Bitcoin | Signet (Mutinynet) | Mainnet |
-| Lightning | LN on Signet | LN on Mainnet |
-| Nostr relay | ws://localhost:7777 | wss://relay.damus.io, nos.lol, relay.nostr.band |
-| Blossom | http://localhost:3000 | https://media.lightning.fm |
-
-Override with env vars: `LFM_NOSTR_RELAYS`, `LFM_BLOSSOM_SERVER`, `LFM_ENV`.
-
-## Tests
-
-```sh
-# Rust tests (113 tests, <1s)
-cd src-tauri && cargo test
-
-# React tests (18 tests, <1s)
-npx vitest run
-
-# Both
-(cd src-tauri && cargo test) && npx vitest run
-```
-
-## Project Structure
-
-```
-app-desktop/
-├── dev/                    # Docker Compose for local dev services
-├── src/                    # React frontend
-│   ├── App.tsx             # Main app shell, routing, player
-│   ├── components/
-│   │   ├── library/        # Catalog browsing (track list, artist grid)
-│   │   ├── upload/         # Artist upload (3-pane: tracks, detail, preview)
-│   │   ├── dashboard/      # Earnings, node status, withdrawals
-│   │   ├── onboarding/     # Identity create/import flow
-│   │   └── PaymentNotification.tsx
-│   └── globals.css         # Design system (amber terminal)
-├── src-tauri/src/          # Rust backend
-│   ├── node.rs             # LDK node lifecycle
-│   ├── identity.rs         # Nostr keypair + keychain
-│   ├── relay.rs            # Nostr relay connection + events
-│   ├── upload.rs           # Blossom upload
-│   ├── metadata.rs         # ID3/Vorbis tag read/write (lofty)
-│   ├── waveform.rs         # Audio peak generation (symphonia)
-│   ├── playback.rs         # 3-tier audio fetch + cache
-│   ├── streaming.rs        # Payment session + rake model
-│   ├── credits.rs          # Listener funding
-│   ├── events.rs           # LDK event loop → frontend
-│   └── commands.rs         # Tauri command definitions
-└── test-data/              # 40 test MP3s (4 artists × 10 tracks)
-```
+[MIT](LICENSE)

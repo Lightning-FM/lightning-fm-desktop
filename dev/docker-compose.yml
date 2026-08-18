@@ -15,13 +15,13 @@ services:
       - relay-data:/usr/src/app/db
     restart: unless-stopped
 
-  # Blossom server — http://localhost:3000
+  # Blossom server — http://localhost:7778 (matches npm run tauri:dev:private)
   # Using a simple Node.js static file server as Blossom stand-in for dev.
   # Accepts PUT uploads to /upload, serves files by SHA-256 hash.
   blossom:
     image: node:22-alpine
     ports:
-      - "3000:3000"
+      - "7778:3000"
     volumes:
       - blossom-data:/data
       - ./blossom-dev-server.js:/app/server.js:ro
