@@ -9,7 +9,7 @@ Tauri v2 shell, React frontend, Rust backend with an embedded Lightning node ([l
 - **Identity**: your Nostr key is created (or imported) locally and stored in the macOS Keychain. It never leaves your machine.
 - **Publish**: tracks upload to a Blossom media server and publish as kind 31337 Nostr events signed by your key, to the Lightning FM relay and public relays. The full wire format is documented at [lightning.fm/interop](https://lightning.fm/interop).
 - **Listen**: streaming is free, no account. The catalog is read from relays; audio is fetched by content hash from Blossom.
-- **Sell**: attach a purchasable download (lossless master, stems zip, or the stream file itself) to any track. Buyers pay an invoice minted by your own wallet, settlement confirms via LUD-21, and the download unlocks. Fulfillment runs through the hosted gate on lightning.fm or through [your own artist node](https://github.com/maml/lightning-fm-artist-nodes); either way the platform's cut is structurally 0% because the money never touches it.
+- **Sell**: attach a purchasable download (lossless master, stems zip, or the stream file itself) to any track. Buyers pay an invoice minted by your own wallet, settlement confirms via LUD-21, and the download unlocks. Fulfillment runs through the hosted gate on lightning.fm or through [your own artist node](https://github.com/Lightning-FM/lightning-fm-artist-nodes); either way the platform's cut is structurally 0% because the money never touches it.
 - **Run a node**: the embedded ldk-node opens channels, pays, and receives without any external Lightning software.
 
 ## Prerequisites
