@@ -157,6 +157,24 @@ pub async fn fetch_tracks(client: &Client) -> Result<Vec<TrackInfo>, String> {
     Ok(tracks)
 }
 
+/// Deduplicate addressable track events by (artist_pubkey, slug), keeping
+/// the most recent per key. NIP-01 addressable events are identified by
+/// (kind, pubkey, d) — the d-tag (slug) alone is not unique across
+/// artists. Keying by slug alone let two different onboarded artists who
+/// happened to pick the same d-tag (e.g. both titling a track "demo")
+/// collide, with one artist's track silently dropped from the result.
+fn dedup_tracks(tracks: Vec<TrackInfo>) -> Vec<TrackInfo> {
+    let mut by_key: std::collections::HashMap<String, TrackInfo> = std::collections::HashMap::new();
+    for track in tracks {
+        let key = format!("{}:{}", track.artist_pubkey, track.slug);
+        match by_key.get(&key) {
+            Some(existing) if existing.created_at >= track.created_at => {} // keep existing
+            _ => { by_key.insert(key, track); }
+        }
+    }
+    by_key.into_values().collect()
+}
+
 /// Fetch tracks + artist profiles in two batched relay requests.
 /// Returns tracks with artist names already resolved where possible.
 pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::collections::HashMap<String, ProfileData>), String> {
@@ -178,16 +196,7 @@ pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::coll
         .filter(|t| t.audio_url.is_some() && t.audio_hash.is_some()) // only playable tracks
         .collect();
 
-    // Deduplicate by slug (d-tag), keeping the most recent event per slug
-    let mut by_slug: std::collections::HashMap<String, TrackInfo> = std::collections::HashMap::new();
-    for track in all_tracks {
-        let slug = track.slug.clone();
-        match by_slug.get(&slug) {
-            Some(existing) if existing.created_at >= track.created_at => {} // keep existing
-            _ => { by_slug.insert(slug, track); }
-        }
-    }
-    let tracks: Vec<TrackInfo> = by_slug.into_values().collect();
+    let tracks = dedup_tracks(all_tracks);
 
     log::info!("Fetched {} playable tracks from relays ({} after dedup)", track_events.len(), tracks.len());
 
@@ -729,6 +738,62 @@ fn parse_track_event(event: &Event) -> Option<TrackInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─── dedup_tracks tests ──────────────────────────────────────
+    // Regression coverage for a real bug: dedup keyed by slug alone let
+    // two different artists' tracks collide on a shared d-tag.
+
+    fn test_track(pubkey: &str, slug: &str, created_at: u64) -> TrackInfo {
+        TrackInfo {
+            event_id: format!("event-{}-{}", pubkey, slug),
+            artist_pubkey: pubkey.to_string(),
+            artist_npub: String::new(),
+            title: slug.to_string(),
+            slug: slug.to_string(),
+            duration_secs: None,
+            audio_hash: None,
+            audio_url: None,
+            fallback_url: None,
+            mime_type: None,
+            file_size: None,
+            preview_secs: None,
+            lightning_node_id: None,
+            image_url: None,
+            created_at,
+        }
+    }
+
+    #[test]
+    fn dedup_keeps_both_artists_on_colliding_slug() {
+        let a = test_track("artist-a", "demo", 1000);
+        let b = test_track("artist-b", "demo", 2000); // later timestamp — would win under the old bug
+
+        let result = dedup_tracks(vec![a, b]);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().any(|t| t.artist_pubkey == "artist-a"));
+        assert!(result.iter().any(|t| t.artist_pubkey == "artist-b"));
+    }
+
+    #[test]
+    fn dedup_keeps_latest_for_same_artist_same_slug() {
+        let v1 = test_track("artist-a", "my-track", 1000);
+        let v2 = test_track("artist-a", "my-track", 2000);
+
+        let result = dedup_tracks(vec![v1, v2]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].created_at, 2000);
+    }
+
+    #[test]
+    fn dedup_order_independent() {
+        let older = test_track("artist-a", "my-track", 1000);
+        let newer = test_track("artist-a", "my-track", 2000);
+
+        // newer inserted first — must still win
+        let result = dedup_tracks(vec![newer.clone(), older]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].created_at, newer.created_at);
+    }
 
     // ─── build_profile_content tests ────────────────────────────
 
