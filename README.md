@@ -4,6 +4,12 @@ The artist and listener app for [Lightning FM](https://lightning.fm), a music pl
 
 Tauri v2 shell, React frontend, Rust backend with an embedded Lightning node ([ldk-node](https://github.com/lightningdevkit/ldk-node)). No external daemon required.
 
+## Who this is for
+
+- **Listeners**: you want to browse the catalog and play music for free. Start with [What works today](#what-works-today), then the [Quick start](#quick-start).
+- **Artists**: you want to publish tracks, sell downloads, and get paid to your own wallet. Read [What it does](#what-it-does), then check your platform against [What works today](#what-works-today).
+- **Developers**: you want to build or contribute. Jump to [Quick start](#quick-start) for the isolated dev environment and [Layout](#layout) for where things live. The wire format is documented at [lightning.fm/interop](https://lightning.fm/interop).
+
 ## What it does
 
 - **Identity**: your Nostr key is created (or imported) locally and stored in the macOS Keychain. It never leaves your machine.
@@ -11,6 +17,26 @@ Tauri v2 shell, React frontend, Rust backend with an embedded Lightning node ([l
 - **Listen**: streaming is free, no account. The catalog is read from relays; audio is fetched by content hash from Blossom.
 - **Sell**: attach a purchasable download (lossless master, stems zip, or the stream file itself) to any track. Buyers pay an invoice minted by your own wallet, settlement confirms via LUD-21, and the download unlocks. Fulfillment runs through the hosted gate on lightning.fm or through [your own artist node](https://github.com/Lightning-FM/lightning-fm-artist-nodes); either way the platform's cut is structurally 0% because the money never touches it.
 - **Run a node**: the embedded ldk-node opens channels, pays, and receives without any external Lightning software.
+
+## What works today
+
+Verified against the code in `src/` and `src-tauri/src/`, not against ambition.
+
+| Feature | Status |
+|---|---|
+| Nostr identity created or imported locally, stored in the macOS Keychain | Works |
+| Encrypted identity backup and restore verification | Works |
+| Browse the catalog from relays | Works |
+| Free playback; audio resolves local cache first, then the artist's own node, then the Blossom mirror | Works |
+| Publish tracks: Blossom upload plus kind 31337 events signed by your key | Works |
+| Edit your artist profile (kind 0) | Works |
+| Embedded Lightning node: start, balance, channels, peer connect, invoices | Works |
+| Withdraw earnings over Lightning or to an on-chain address | Works |
+| Sell downloads: kind 30402 listings, artifact upload, hosted or self-hosted fulfillment | Works |
+| Buy downloads in-app: the embedded node pays the invoice, the app keeps the preimage as your re-download credential | Works |
+| Audio metadata read/write, artwork extraction, waveform rendering | Works |
+| Windows and Linux | Not supported; key storage is macOS Keychain only |
+| Auto-update | Not built; download new versions from [lightning.fm/download](https://lightning.fm/download) |
 
 ## Prerequisites
 
@@ -39,7 +65,7 @@ npm run tauri:dev:private        # separate Keychain slot, local endpoints
 ## Layout
 
 - `src/` React frontend (library, upload, dashboard, onboarding)
-- `src-tauri/src/` Rust backend: `node` (Lightning), `relay` (Nostr), `identity`, `upload`, `playback`, `streaming`, `products`, `purchases`, `metadata`, `waveform`
+- `src-tauri/src/` Rust backend: `node` (Lightning), `relay` (Nostr), `identity`, `upload`, `playback`, `products`, `purchases`, `metadata`, `waveform`
 - `dev/` local relay + Blossom compose for isolated development
 
 Frontend and backend communicate only through Tauri commands and events.
