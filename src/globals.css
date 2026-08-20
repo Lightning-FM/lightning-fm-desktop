@@ -1,10 +1,11 @@
 /* ─────────────────────────────────────────────
    Lightning FM — Desktop App Global Styles
-   Copied from app/src/app/globals.css (landing page).
-   This file IS the design system. Keep in sync with the landing page.
+   Ported from app/src/app/globals.css (marketing site).
+   This file IS the design system. Keep in sync with the site:
+   Daylight (cream/ink, default) + Moonlight (amber-on-black, toggle).
 
-   Differences from landing page:
-   - Fonts loaded via Google Fonts @import (no Next.js font optimization)
+   Differences from the site:
+   - Fonts loaded via <link> in index.html (no Next.js font optimization)
    - No tw-animate-css or shadcn/tailwind.css imports (desktop doesn't use these)
    ───────────────────────────────────────────── */
 
@@ -69,74 +70,83 @@
   --color-stream-inactive: var(--text-muted);
 }
 
-/* ── Amber Terminal (only theme — dark by default) ── */
+/* ── Daylight Terminal (default theme) ──
+   Warm cream ground, ink text, retro carried by mono type + hard ink
+   borders and offset block shadows instead of darkness. One accent:
+   amber. --amber is the accent as TEXT/BORDER (WCAG AA on cream);
+   --amber-fill is the CTA fill; --on-amber is ink on fills. */
 :root {
-  /* Font variables — on landing page these come from next/font */
+  /* Font variables — on the site these come from next/font */
   --font-jetbrains: 'JetBrains Mono', ui-monospace, monospace;
   --font-inter: 'Inter', ui-sans-serif, sans-serif;
 
   /* Core surfaces */
-  --background: #0D0D0D;
-  --foreground: #F5E6C8;
-  --card: #161616;
-  --card-foreground: #F5E6C8;
-  --popover: #161616;
-  --popover-foreground: #F5E6C8;
+  --background: #F7F2E6;
+  --foreground: #171208;
+  --card: #FFFDF6;
+  --card-foreground: #171208;
+  --popover: #FFFDF6;
+  --popover-foreground: #171208;
 
   /* Brand colors */
   --primary: #E8A917;
-  --primary-foreground: #0D0D0D;
-  --secondary: #1E1E1E;
-  --secondary-foreground: #A89274;
-  --muted: #1E1E1E;
-  --muted-foreground: #5C4F3A;
+  --primary-foreground: #171208;
+  --secondary: #EFE7D2;
+  --secondary-foreground: #4A4232;
+  --muted: #EFE7D2;
+  --muted-foreground: #5C513D;
   --accent: #E8A917;
-  --accent-foreground: #0D0D0D;
-  --destructive: #F85149;
+  --accent-foreground: #171208;
+  --destructive: #B62324;
 
   /* Borders & inputs */
-  --border: #2A2520;
-  --input: #2A2520;
-  --ring: #E8A917;
+  --border: #171208;
+  --input: #171208;
+  --ring: #8A5E00;
 
   --radius: 0;
 
   /* Lightning FM tokens */
-  --bg-primary: #0D0D0D;
-  --bg-secondary: #161616;
-  --bg-tertiary: #1E1E1E;
-  --text-primary: #F5E6C8;
-  --text-secondary: #A89274;
-  --text-muted: #5C4F3A;
-  --amber: #E8A917;
-  --amber-dim: #B8860B;
-  --amber-glow: rgba(232, 169, 23, 0.12);
-  --border-active: #E8A917;
+  --bg-primary: #F7F2E6;
+  --bg-secondary: #FFFDF6;
+  --bg-tertiary: #EFE7D2;
+  --text-primary: #171208;
+  --text-secondary: #4A4232;
+  --text-muted: #5C513D; /* 6.2:1 on #F7F2E6 — clears WCAG AA small text */
+  --text-faint: #8A8172;
+  --amber: #8A5E00;      /* accent as text/border — 7:1 on cream */
+  --amber-fill: #E8A917; /* CTA/badge fills, paired with ink text */
+  --amber-dim: #B8860B;  /* fill hover */
+  --on-amber: #171208;   /* text on amber fills, theme-independent */
+  --amber-glow: rgba(232, 169, 23, 0.25);
+  --border-active: #8A5E00;
+  --border-soft: #D8CFB8;
+  --shadow-block: 4px 4px 0 #171208;
 
-  /* Semantic */
-  --sats-received: #E8A917;
-  --sats-glow: rgba(232, 169, 23, 0.20);
-  --success: #3FB950;
-  --warning: #D29922;
-  --error: #F85149;
-  --info: #58A6FF;
+  /* Semantic — darkened for cream ground */
+  --sats-received: #8A5E00;
+  --sats-glow: rgba(232, 169, 23, 0.30);
+  --success: #1F7A33;
+  --warning: #8A5E00;
+  --error: #B62324;
+  --info: #0B5FA5;
 
-  /* Charts — amber spectrum */
-  --chart-1: #E8A917;
+  /* Charts — amber spectrum, ink-weighted */
+  --chart-1: #8A5E00;
   --chart-2: #B8860B;
   --chart-3: #D29922;
-  --chart-4: #A89274;
-  --chart-5: #5C4F3A;
+  --chart-4: #4A4232;
+  --chart-5: #171208;
 
   /* Sidebar */
-  --sidebar: #0D0D0D;
-  --sidebar-foreground: #A89274;
+  --sidebar: #F7F2E6;
+  --sidebar-foreground: #4A4232;
   --sidebar-primary: #E8A917;
-  --sidebar-primary-foreground: #0D0D0D;
-  --sidebar-accent: #1E1E1E;
-  --sidebar-accent-foreground: #F5E6C8;
-  --sidebar-border: #2A2520;
-  --sidebar-ring: #E8A917;
+  --sidebar-primary-foreground: #171208;
+  --sidebar-accent: #EFE7D2;
+  --sidebar-accent-foreground: #171208;
+  --sidebar-border: #D8CFB8;
+  --sidebar-ring: #8A5E00;
 
   /* Spacing (8px grid) */
   --space-1: 0.5rem;
@@ -147,7 +157,10 @@
   --space-8: 4rem;
 }
 
-.dark {
+/* ── Moonlight (toggleable dark theme; .dark kept as alias) ──
+   The original Amber Terminal palette as the complement of Daylight. */
+.dark,
+.moonlight {
   --background: #0D0D0D;
   --foreground: #F5E6C8;
   --card: #161616;
@@ -166,11 +179,36 @@
   --border: #2A2520;
   --input: #2A2520;
   --ring: #E8A917;
+
+  --bg-primary: #0D0D0D;
+  --bg-secondary: #161616;
+  --bg-tertiary: #1E1E1E;
+  --text-primary: #F5E6C8;
+  --text-secondary: #A89274;
+  --text-muted: #8A775A;
+  --text-faint: #6B6252;
+  --amber: #E8A917;
+  --amber-fill: #E8A917;
+  --amber-dim: #B8860B;
+  --on-amber: #171208;
+  --amber-glow: rgba(232, 169, 23, 0.12);
+  --border-active: #E8A917;
+  --border-soft: #2A2520;
+  --shadow-block: none;
+
+  --sats-received: #E8A917;
+  --sats-glow: rgba(232, 169, 23, 0.20);
+  --success: #3FB950;
+  --warning: #D29922;
+  --error: #F85149;
+  --info: #58A6FF;
+
   --chart-1: #E8A917;
   --chart-2: #B8860B;
   --chart-3: #D29922;
   --chart-4: #A89274;
   --chart-5: #5C4F3A;
+
   --sidebar: #0D0D0D;
   --sidebar-foreground: #A89274;
   --sidebar-primary: #E8A917;
@@ -191,7 +229,8 @@
      disabled:opacity-* utility without needing one. */
   button:disabled,
   [role="button"][aria-disabled="true"] {
-    filter: grayscale(0.7) brightness(0.55);
+    filter: grayscale(0.7);
+    opacity: 0.5;
     cursor: not-allowed;
   }
   body {
@@ -272,19 +311,8 @@
     border: 1px solid var(--amber);
   }
 
-  .scanlines::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 0, 0, 0.03) 2px,
-      rgba(0, 0, 0, 0.03) 4px
-    );
-    pointer-events: none;
-    z-index: 50;
+  .block-shadow {
+    box-shadow: var(--shadow-block);
   }
 
   .cursor-blink::after {

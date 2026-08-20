@@ -39,13 +39,65 @@ interface WalletCheck {
   error: string | null;
 }
 
-type Section = "profile" | "selling" | "identity";
+type Section = "profile" | "selling" | "appearance" | "identity";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "selling", label: "Selling" },
+  { id: "appearance", label: "Appearance" },
   { id: "identity", label: "Identity" },
 ];
+
+// Daylight is the default; Moonlight is the amber-on-black complement.
+// The class lives on <html> (applied before first paint by index.html);
+// the same "lfm-theme" localStorage key the site's toggle uses.
+type Theme = "daylight" | "moonlight";
+
+function readTheme(): Theme {
+  return document.documentElement.classList.contains("moonlight")
+    ? "moonlight"
+    : "daylight";
+}
+
+function AppearanceSection() {
+  const [theme, setTheme] = useState<Theme>(readTheme);
+
+  const apply = (next: Theme) => {
+    document.documentElement.classList.toggle("moonlight", next === "moonlight");
+    try {
+      localStorage.setItem("lfm-theme", next);
+    } catch {
+      // storage unavailable: theme still applies for this session
+    }
+    setTheme(next);
+  };
+
+  return (
+    <div className="p-6 max-w-lg">
+      <Field
+        label="Theme"
+        hint="Daylight for the studio window, Moonlight for the dark room"
+      >
+        <div className="flex gap-2">
+          {(["daylight", "moonlight"] as const).map((t) => (
+            <button
+              key={t}
+              aria-pressed={theme === t}
+              className={`font-body-mono px-3 py-1.5 text-[13px] capitalize transition-all ${
+                theme === t
+                  ? "text-amber bg-amber/10 border border-amber"
+                  : "text-secondary-foreground hover:text-foreground border border-border"
+              }`}
+              onClick={() => apply(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </Field>
+    </div>
+  );
+}
 
 function Field({
   label,
@@ -101,6 +153,8 @@ export function SettingsView({ npub }: SettingsViewProps) {
           <ProfileSection npub={npub} />
         ) : section === "selling" ? (
           <SellingSection />
+        ) : section === "appearance" ? (
+          <AppearanceSection />
         ) : (
           <IdentitySection npub={npub} />
         )}
