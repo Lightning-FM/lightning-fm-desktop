@@ -10,6 +10,7 @@ import type {
   SortDirection,
 } from "./types";
 import { TrackRow } from "./TrackRow";
+import { TrackDetails } from "./TrackDetails";
 import { ArtistCard } from "./ArtistCard";
 import { ArtistDetail } from "./ArtistDetail";
 import { BuyModal } from "../store/BuyModal";
@@ -40,6 +41,7 @@ export function LibraryView({
     null
   );
   const [buying, setBuying] = useState<LibraryTrack | null>(null);
+  const [expandedHash, setExpandedHash] = useState<string | null>(null);
 
   // Filter tracks by search
   const filtered = useMemo(() => {
@@ -167,16 +169,32 @@ export function LibraryView({
     );
   }
 
+  // Checkout modal — rendered from both the flat list and artist detail
+  const checkout = buying?.product && (
+    <BuyModal
+      product={buying.product}
+      artistName={buying.artist}
+      onClose={() => setBuying(null)}
+      onPurchased={() => {
+        /* record lands in purchases_list; the Purchases tab reloads on open */
+      }}
+    />
+  );
+
   // Artist detail view (drilled in from artist grid)
   if (selectedArtist) {
     return (
-      <ArtistDetail
-        artist={selectedArtist}
-        activeTrackHash={activeTrackHash}
-        isPlaying={isPlaying}
-        onPlay={onPlay}
-        onBack={() => setSelectedArtist(null)}
-      />
+      <>
+        <ArtistDetail
+          artist={selectedArtist}
+          activeTrackHash={activeTrackHash}
+          isPlaying={isPlaying}
+          onPlay={onPlay}
+          onBuy={setBuying}
+          onBack={() => setSelectedArtist(null)}
+        />
+        {checkout}
+      </>
     );
   }
 
@@ -273,17 +291,25 @@ export function LibraryView({
               </div>
             ) : (
               sorted.map((track, i) => (
-                <TrackRow
-                  key={track.hash}
-                  track={track}
-                  index={i}
-                  isActive={activeTrackHash === track.hash}
-                  isPlaying={isPlaying && activeTrackHash === track.hash}
-                  showArtist={true}
-                  showArtwork={true}
-                  onPlay={onPlay}
-                  onBuy={setBuying}
-                />
+                <div key={track.hash}>
+                  <TrackRow
+                    track={track}
+                    index={i}
+                    isActive={activeTrackHash === track.hash}
+                    isPlaying={isPlaying && activeTrackHash === track.hash}
+                    showArtist={true}
+                    showArtwork={true}
+                    onPlay={onPlay}
+                    onBuy={setBuying}
+                    expanded={expandedHash === track.hash}
+                    onToggleExpand={(t) =>
+                      setExpandedHash((h) => (h === t.hash ? null : t.hash))
+                    }
+                  />
+                  {expandedHash === track.hash && (
+                    <TrackDetails track={track} onBuy={setBuying} />
+                  )}
+                </div>
               ))
             )}
           </div>
@@ -312,16 +338,7 @@ export function LibraryView({
       )}
 
       {/* Checkout */}
-      {buying?.product && (
-        <BuyModal
-          product={buying.product}
-          artistName={buying.artist}
-          onClose={() => setBuying(null)}
-          onPurchased={() => {
-            /* record lands in purchases_list; the Purchases tab reloads on open */
-          }}
-        />
-      )}
+      {checkout}
     </div>
   );
 }

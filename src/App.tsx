@@ -132,6 +132,8 @@ function App() {
         lightningNodeId: t.lightningNodeId,
         artistDirect: true,
         product: productByKey.get(`${t.artistPubkey}:${t.slug}`) ?? null,
+        description: t.description || null,
+        videoUrl: t.videoUrl || null,
       })));
     } catch (e) {
       console.error("Catalog load failed:", e);

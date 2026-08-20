@@ -57,6 +57,9 @@ pub fn detect_mime(path: &Path) -> String {
         Some("aac") => "audio/aac".to_string(),
         Some("opus") => "audio/opus".to_string(),
         Some("webm") => "audio/webm".to_string(),
+        Some("mp4") => "video/mp4".to_string(),
+        Some("m4v") => "video/x-m4v".to_string(),
+        Some("mov") => "video/quicktime".to_string(),
         _ => "application/octet-stream".to_string(),
     }
 }

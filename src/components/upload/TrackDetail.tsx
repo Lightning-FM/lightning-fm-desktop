@@ -423,6 +423,18 @@ export function TrackDetail({
                 className="w-24 h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors tabular-nums"
               />
             </Field>
+            <Field
+              label="Music video URL"
+              hint="Optional — a hosted video file (e.g. on Blossom); listeners get a player on the track"
+            >
+              <input
+                type="text"
+                value={track.videoUrl}
+                onChange={(e) => onUpdate({ videoUrl: e.target.value })}
+                placeholder="https://media.lightning.fm/…"
+                className="w-full h-8 px-2 bg-transparent border border-border text-foreground font-body-mono focus:border-amber focus:outline-none transition-colors"
+              />
+            </Field>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"

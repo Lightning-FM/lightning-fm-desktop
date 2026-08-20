@@ -208,6 +208,7 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
         description: "",
         isExplicit: false,
         isrc: "",
+        videoUrl: "",
 
         // Audio info from File API (approximate -- Rust will give exact values)
         duration: 0,
@@ -483,6 +484,7 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
             isrc: track.isrc || null,
             lyrics: track.lyrics || null,
             explicit: track.isExplicit || null,
+            video_url: track.videoUrl.trim() || null,
           },
         });
 

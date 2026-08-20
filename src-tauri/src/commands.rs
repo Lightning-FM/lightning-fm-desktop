@@ -5,8 +5,6 @@ use tauri::{State, AppHandle, Manager, Emitter};
 use crate::node::{LdkState, NodeInfo, NodeConfig, BalanceInfo, ChannelInfo};
 use crate::identity::{IdentityState, IdentityInfo};
 use crate::relay::{RelayState, TrackInfo, ProfileData};
-use crate::credits::{CreditsState, CreditsInfo};
-use crate::streaming::{StreamingState, StreamSession};
 use nostr_sdk::prelude::*;
 use std::path::Path;
 
@@ -346,6 +344,8 @@ pub struct CatalogItem {
     pub preview_secs: Option<u64>,
     pub lightning_node_id: Option<String>,
     pub image_url: Option<String>,
+    pub video_url: Option<String>,
+    pub description: Option<String>,
     pub created_at: u64,
 }
 
@@ -397,6 +397,8 @@ pub async fn load_catalog(
             preview_secs: t.preview_secs,
             lightning_node_id: t.lightning_node_id,
             image_url: t.image_url,
+            video_url: t.video_url,
+            description: t.description,
             created_at: t.created_at,
         }
     }).collect();
@@ -525,6 +527,7 @@ pub async fn upload_track(
         node_lock.as_ref().map(|node| node.node_id().to_string())
     };
 
+    let extras = extras.unwrap_or_default();
     let event_id = crate::relay::publish_track(
         client,
         &title,
@@ -538,7 +541,7 @@ pub async fn upload_track(
         preview_secs,
         lightning_node_id.as_deref(),
         image_url.as_deref(),
-        &extras.unwrap_or_default(),
+        &extras,
     ).await?;
 
     Ok(TrackInfo {
@@ -556,6 +559,13 @@ pub async fn upload_track(
         preview_secs,
         lightning_node_id,
         image_url,
+        video_url: extras.video_url.clone(),
+        description: extras
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+            .map(str::to_string),
         created_at: nostr_sdk::Timestamp::now().as_u64(),
     })
 }
@@ -810,263 +820,6 @@ pub fn playback_read_audio(file_path: String) -> Result<String, String> {
 pub fn playback_cache_stats() -> CacheStats {
     let (count, total_bytes) = crate::playback::cache_stats();
     CacheStats { count, total_bytes }
-}
-
-/// Start playback — returns the audio path and playback mode.
-/// If the user has credits/funding, they get full playback.
-/// If unfunded, they get preview-only (frontend enforces the cutoff).
-#[derive(serde::Serialize)]
-pub struct PlaybackStartResult {
-    pub cache_path: String,
-    pub artist_direct: bool,
-    pub mode: String,             // "full" or "preview"
-    pub preview_secs: Option<u64>, // only set if mode == "preview"
-    pub credits_remaining: u64,
-}
-
-#[tauri::command]
-pub async fn playback_start(
-    hash: String,
-    urls: Vec<String>,
-    preview_secs: Option<u64>,
-    credits_state: State<'_, CreditsState>,
-) -> Result<PlaybackStartResult, String> {
-    // Fetch the audio (cache → P2P → mirror)
-    let (path, artist_direct) = crate::playback::fetch_and_cache(&hash, urls).await?;
-
-    // Determine playback mode based on funding
-    let can_stream = crate::credits::can_stream(&credits_state)?;
-
-    if can_stream {
-        // Activate credits on first play
-        crate::credits::activate_credits(&credits_state)?;
-
-        let remaining = *credits_state.credits_remaining.lock()
-            .map_err(|e| format!("Failed to lock credits_remaining: {e}"))?;
-
-        Ok(PlaybackStartResult {
-            cache_path: path,
-            artist_direct,
-            mode: "full".to_string(),
-            preview_secs: None,
-            credits_remaining: remaining,
-        })
-    } else {
-        Ok(PlaybackStartResult {
-            cache_path: path,
-            artist_direct,
-            mode: "preview".to_string(),
-            preview_secs: Some(preview_secs.unwrap_or(10)),
-            credits_remaining: 0,
-        })
-    }
-}
-
-// ─── Credits Commands ───────────────────────────────────────
-
-/// Get current credits info
-#[tauri::command]
-pub fn credits_info(state: State<CreditsState>) -> Result<CreditsInfo, String> {
-    crate::credits::get_credits_info(&state)
-}
-
-/// Deduct credits (called by the streaming payment loop each interval)
-#[tauri::command]
-pub fn credits_deduct(amount: u64, state: State<CreditsState>) -> Result<CreditsInfo, String> {
-    let success = crate::credits::deduct_credits(&state, amount)?;
-    if !success {
-        return Err("Insufficient credits".to_string());
-    }
-    crate::credits::get_credits_info(&state)
-}
-
-// ─── Streaming Payment Commands ─────────────────────────────
-
-/// Start a streaming session for a track
-#[tauri::command]
-pub fn stream_start(
-    track_id: String,
-    artist_pubkey: String,
-    lightning_node_id: Option<String>,
-    artist_direct: bool,
-    state: State<StreamingState>,
-) -> Result<StreamSession, String> {
-    // Validate lightning_node_id if provided
-    if let Some(ref node_id) = lightning_node_id {
-        crate::streaming::parse_lightning_pubkey(node_id)?;
-    }
-
-    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
-    let session = StreamSession::new(
-        &track_id,
-        &artist_pubkey,
-        lightning_node_id.as_deref(),
-        artist_direct,
-    );
-    *session_lock = Some(session.clone());
-    Ok(session)
-}
-
-/// Process a payment interval — deducts credits and records the payment.
-/// Returns the updated session and payment details.
-/// The frontend calls this every 60 seconds while audio is playing.
-#[derive(serde::Serialize)]
-pub struct IntervalResult {
-    pub session: StreamSession,
-    pub artist_sats: u64,
-    pub listener_sats: u64,
-    pub credits_remaining: u64,
-    pub credits_depleted: bool,
-}
-
-#[tauri::command]
-pub fn stream_tick(
-    streaming_state: State<StreamingState>,
-    credits_state: State<CreditsState>,
-    ldk_state: State<LdkState>,
-) -> Result<IntervalResult, String> {
-    let mut session_lock = streaming_state.session.lock().map_err(|e| e.to_string())?;
-    let session = session_lock.as_mut()
-        .ok_or("No active streaming session")?;
-
-    if !session.is_playing {
-        return Err("Session is paused".to_string());
-    }
-
-    // No rake — the listener's payment goes to the artist in full.
-    let artist_sats = crate::streaming::artist_sats_per_interval();
-    let listener_cost = crate::streaming::listener_cost_per_interval();
-
-    // Resolve everything fallible BEFORE deducting, so no `?` can return
-    // after credits leave the pool without a refund. Clone the node Arc out
-    // of the mutex so the lock isn't held across the keysend call below.
-    let keysend_target = match session.lightning_node_id {
-        Some(ref node_id_hex) => {
-            let pubkey = crate::streaming::parse_lightning_pubkey(node_id_hex)?;
-            let node = {
-                let node_lock = ldk_state.node.lock().map_err(|e| e.to_string())?;
-                (*node_lock).clone()
-            };
-            Some((node_id_hex.clone(), pubkey, node))
-        }
-        None => None,
-    };
-
-    // Deduct from credits (or wallet later)
-    let success = crate::credits::deduct_credits(&credits_state, listener_cost)?;
-    let credits_depleted = !success;
-
-    if success {
-        // Record the payment in the session
-        session.record_payment();
-
-        // Send keysend with custom TLV metadata if artist has a Lightning node_id
-        match keysend_target {
-            Some((node_id_hex, pubkey, Some(node))) => {
-                let amount_msat = artist_sats * 1000;
-                let custom_tlvs = crate::streaming::build_custom_tlv_vec(
-                    &session.track_id,
-                    &session.artist_pubkey,
-                );
-
-                match node.spontaneous_payment().send_with_custom_tlvs(amount_msat, pubkey, None, custom_tlvs) {
-                    Ok(payment_id) => {
-                        log::info!(
-                            "Keysend sent: {} sats ({} msat) to {} with TLV metadata. Payment: {}. Track: {}",
-                            artist_sats, amount_msat, node_id_hex, payment_id, session.track_id,
-                        );
-                    }
-                    Err(e) => {
-                        // Keysend failed immediately — refund the optimistically deducted credits
-                        if let Err(refund_err) = crate::credits::refund_credits(&credits_state, listener_cost) {
-                            log::error!(
-                                "CRITICAL: Failed to refund {} sats after keysend failure: {}. Track: {}",
-                                listener_cost, refund_err, session.track_id,
-                            );
-                        } else {
-                            log::warn!(
-                                "Keysend failed, {} sats refunded to credits. Error: {:?}. Track: {}",
-                                listener_cost, e, session.track_id,
-                            );
-                        }
-                    }
-                }
-            }
-            Some((_, _, None)) => {
-                // LDK node not running — refund credits since no payment was sent
-                if let Err(refund_err) = crate::credits::refund_credits(&credits_state, listener_cost) {
-                    log::error!(
-                        "CRITICAL: LDK node not running and failed to refund {} sats: {}. Track: {}",
-                        listener_cost, refund_err, session.track_id,
-                    );
-                } else {
-                    log::warn!(
-                        "LDK node not running — {} sats refunded. Track: {}",
-                        listener_cost, session.track_id,
-                    );
-                }
-            }
-            None => {
-                log::info!(
-                    "No lightning_node_id for artist — recording payment without keysend. Track: {}",
-                    session.track_id,
-                );
-            }
-        }
-
-        log::info!(
-            "Stream tick: {} sats to artist, served {}. Track: {}",
-            artist_sats,
-            if session.artist_direct { "direct" } else { "from mirror" },
-            session.track_id,
-        );
-    }
-
-    let credits_remaining = *credits_state.credits_remaining.lock()
-        .map_err(|e| format!("Failed to lock credits_remaining: {e}"))?;
-
-    Ok(IntervalResult {
-        session: session.clone(),
-        artist_sats,
-        listener_sats: listener_cost,
-        credits_remaining,
-        credits_depleted,
-    })
-}
-
-/// Pause the active streaming session
-#[tauri::command]
-pub fn stream_pause(state: State<StreamingState>) -> Result<StreamSession, String> {
-    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
-    let session = session_lock.as_mut()
-        .ok_or("No active streaming session")?;
-    session.pause();
-    Ok(session.clone())
-}
-
-/// Resume the active streaming session
-#[tauri::command]
-pub fn stream_resume(state: State<StreamingState>) -> Result<StreamSession, String> {
-    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
-    let session = session_lock.as_mut()
-        .ok_or("No active streaming session")?;
-    session.resume();
-    Ok(session.clone())
-}
-
-/// Stop the active streaming session and return final stats
-#[tauri::command]
-pub fn stream_stop(state: State<StreamingState>) -> Result<StreamSession, String> {
-    let mut session_lock = state.session.lock().map_err(|e| e.to_string())?;
-    session_lock.take()
-        .ok_or("No active streaming session".to_string())
-}
-
-/// Get current streaming session info
-#[tauri::command]
-pub fn stream_info(state: State<StreamingState>) -> Result<Option<StreamSession>, String> {
-    let session_lock = state.session.lock().map_err(|e| e.to_string())?;
-    Ok(session_lock.clone())
 }
 
 // ─── Metadata & Waveform Commands ──────────────────────────

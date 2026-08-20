@@ -18,6 +18,10 @@ export interface CatalogItem {
   previewSecs: number | null;
   lightningNodeId: string | null;
   imageUrl: string | null;
+  /** Music video URL from the optional `video` tag, when the track has one */
+  videoUrl: string | null;
+  /** The artist's description of the track (kind 31337 event content) */
+  description: string | null;
   createdAt: number;
 }
 

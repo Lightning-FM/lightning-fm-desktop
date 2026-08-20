@@ -5,10 +5,8 @@
 use ldk_node::Node;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
-
-use crate::credits::CreditsState;
 
 /// Payload emitted to the frontend for every LDK event.
 /// The frontend listens on "ldk-event" and matches on `event_type`.
@@ -43,26 +41,6 @@ pub fn spawn_event_loop(
             // Race: next event vs shutdown signal
             tokio::select! {
                 event = node.next_event_async() => {
-                    // Bridge: when a Lightning payment arrives, credit the user's
-                    // sats pool. The streaming engine deducts from this same pool,
-                    // so incoming Lightning sats immediately become spendable for
-                    // playback. Do this BEFORE emitting the frontend event so the
-                    // UI's credits_info read reflects the new balance.
-                    if let ldk_node::Event::PaymentReceived { amount_msat, .. } = &event {
-                        let credits_state = app.state::<CreditsState>();
-                        let amount_sats = amount_msat / 1000;
-                        match crate::credits::add_credits(credits_state.inner(), amount_sats) {
-                            Ok(()) => log::info!(
-                                "Credited {} sats to listener pool from incoming payment",
-                                amount_sats,
-                            ),
-                            Err(e) => log::error!(
-                                "Failed to credit {} sats from incoming payment: {}",
-                                amount_sats, e,
-                            ),
-                        }
-                    }
-
                     let payload = map_event(&event, &node);
                     log::info!("LDK event: {}", payload.event_type);
 

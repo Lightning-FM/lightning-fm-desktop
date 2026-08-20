@@ -2,36 +2,16 @@
 
 import { useState } from "react";
 import type { ArtistGroup, LibraryTrack } from "./types";
-import { TrackRow, formatLabel } from "./TrackRow";
+import { TrackRow } from "./TrackRow";
+import { TrackDetails } from "./TrackDetails";
 
 interface ArtistDetailProps {
   artist: ArtistGroup;
   activeTrackHash: string | null;
   isPlaying: boolean;
   onPlay: (track: LibraryTrack) => void;
+  onBuy?: (track: LibraryTrack) => void;
   onBack: () => void;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} B`;
-}
-
-/** The extra details a track can reveal, beyond what its row already shows */
-function trackDetails(track: LibraryTrack): { label: string; value: string }[] {
-  const details: { label: string; value: string }[] = [];
-  details.push({ label: "Format", value: formatLabel(track.format) });
-  if (track.fileSize) details.push({ label: "Size", value: formatFileSize(track.fileSize) });
-  if (track.product) {
-    details.push({
-      label: "For sale",
-      value: `${track.product.price_sats.toLocaleString()} sats`,
-    });
-  }
-  if (track.eventId) details.push({ label: "Event", value: track.eventId.slice(0, 16) + "…" });
-  if (track.hash) details.push({ label: "Audio hash", value: track.hash.slice(0, 16) + "…" });
-  return details;
 }
 
 export function ArtistDetail({
@@ -39,6 +19,7 @@ export function ArtistDetail({
   activeTrackHash,
   isPlaying,
   onPlay,
+  onBuy,
   onBack,
 }: ArtistDetailProps) {
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
@@ -121,26 +102,14 @@ export function ArtistDetail({
               showArtist={false}
               showArtwork={false}
               onPlay={onPlay}
+              onBuy={onBuy}
               expanded={expandedHash === track.hash}
               onToggleExpand={(t) =>
                 setExpandedHash((h) => (h === t.hash ? null : t.hash))
               }
             />
             {expandedHash === track.hash && (
-              <div className="px-14 py-2 border-b border-border bg-amber/5">
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
-                  {trackDetails(track).map(({ label, value }) => (
-                    <div key={label} className="contents">
-                      <dt className="font-label-mono text-muted-foreground uppercase tracking-wider text-[10px] pt-0.5">
-                        {label}
-                      </dt>
-                      <dd className="font-small text-secondary-foreground tabular-nums">
-                        {value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
+              <TrackDetails track={track} onBuy={onBuy} />
             )}
           </div>
         ))}

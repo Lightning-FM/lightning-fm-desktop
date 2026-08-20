@@ -31,6 +31,8 @@ export interface UploadTrack {
   description: string;
   isExplicit: boolean;
   isrc: string;
+  /** Optional hosted music video URL (e.g. Blossom) — publishes a `video` tag */
+  videoUrl: string;
 
   // Audio info (read from file)
   duration: number; // seconds

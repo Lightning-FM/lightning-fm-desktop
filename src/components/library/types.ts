@@ -23,6 +23,10 @@ export interface LibraryTrack {
   artistDirect: boolean;
   /** Purchasable download listing for this track, when the artist sells one */
   product: ProductInfo | null;
+  /** The artist's description of the track (kind 31337 event content) */
+  description: string | null;
+  /** Music video URL, when the track publishes one */
+  videoUrl: string | null;
 }
 
 export interface ArtistGroup {

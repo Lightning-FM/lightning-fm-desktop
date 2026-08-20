@@ -103,6 +103,11 @@ pub struct TrackInfo {
     pub lightning_node_id: Option<String>,
     /// Artwork URL from the "image" tag (e.g., Blossom CDN)
     pub image_url: Option<String>,
+    /// Music video URL from the optional "video" tag (Blossom-hosted),
+    /// falling back to an imeta entry with a video/* mime type.
+    pub video_url: Option<String>,
+    /// The artist's description of the track — the event content.
+    pub description: Option<String>,
     pub created_at: u64,
 }
 
@@ -383,6 +388,12 @@ pub struct TrackExtras {
     pub isrc: Option<String>,
     pub lyrics: Option<String>,
     pub explicit: Option<bool>,
+    /// Optional music video, Blossom-hosted. Emits a `video` tag (URL) plus
+    /// a NIP-92 imeta tag when hash/mime are known. Absent fields emit no
+    /// tags, and readers that don't know the tag ignore it.
+    pub video_url: Option<String>,
+    pub video_hash: Option<String>,
+    pub video_mime: Option<String>,
 }
 
 /// Publish a track metadata event (kind 31337)
@@ -473,6 +484,22 @@ pub async fn publish_track(
     if let Some(n) = extras.track_number {
         tags.push(Tag::custom(TagKind::custom("track_number"), vec![n.to_string()]));
     }
+    // Optional music video (Blossom-hosted). The plain `video` tag is what
+    // our own parsers read; the imeta tag repeats the same facts NIP-92
+    // style for PR #1043 readers. Both are ignorable by parsers that only
+    // read the tags they know.
+    if let Some(video_url) = extras.video_url.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        tags.push(Tag::custom(TagKind::custom("video"), vec![video_url.to_string()]));
+        let mut imeta_parts = vec![format!("url {}", video_url)];
+        imeta_parts.push(format!(
+            "m {}",
+            extras.video_mime.as_deref().unwrap_or("video/mp4")
+        ));
+        if let Some(hash) = extras.video_hash.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            imeta_parts.push(format!("x {}", hash));
+        }
+        tags.push(Tag::custom(TagKind::custom("imeta"), imeta_parts));
+    }
     if extras.explicit == Some(true) {
         tags.push(Tag::custom(TagKind::custom("explicit"), vec!["true".to_string()]));
     }
@@ -497,8 +524,9 @@ pub async fn publish_track(
     // (happened 2026-08-05 to cypherpunk-lullaby). Localhost media publishes
     // only to localhost relays.
     let is_local_url = |u: &str| u.contains("localhost") || u.contains("127.0.0.1");
-    let has_local_media =
-        is_local_url(audio_url) || image_url.is_some_and(is_local_url);
+    let has_local_media = is_local_url(audio_url)
+        || image_url.is_some_and(is_local_url)
+        || extras.video_url.as_deref().is_some_and(is_local_url);
 
     let output = if has_local_media {
         let local_relays: Vec<String> = get_relays()
@@ -716,6 +744,36 @@ fn parse_track_event(event: &Event) -> Option<TrackInfo> {
     let title = get_tag("title")?;
     let slug = get_tag("d").unwrap_or_default();
 
+    // Video: the plain `video` tag wins; otherwise accept a NIP-92 imeta
+    // entry whose mime is video/*.
+    let video_url = get_tag("video").or_else(|| {
+        event.tags.iter().find_map(|tag| {
+            let values = tag.as_slice();
+            if values.first().map(|v| v.as_str()) != Some("imeta") {
+                return None;
+            }
+            let entries: Vec<&str> = values[1..].iter().map(|v| v.as_str()).collect();
+            let is_video = entries
+                .iter()
+                .any(|e| e.strip_prefix("m ").is_some_and(|m| m.starts_with("video/")));
+            if !is_video {
+                return None;
+            }
+            entries
+                .iter()
+                .find_map(|e| e.strip_prefix("url ").map(|u| u.to_string()))
+        })
+    });
+
+    let description = {
+        let trimmed = event.content.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    };
+
     Some(TrackInfo {
         event_id: event.id.to_hex(),
         artist_pubkey: event.pubkey.to_hex(),
@@ -731,6 +789,8 @@ fn parse_track_event(event: &Event) -> Option<TrackInfo> {
         preview_secs: get_tag("preview").and_then(|p| p.parse().ok()),
         lightning_node_id: get_tag("lightning_node_id"),
         image_url: get_tag("image"),
+        video_url,
+        description,
         created_at: event.created_at.as_u64(),
     })
 }
@@ -759,6 +819,8 @@ mod tests {
             preview_secs: None,
             lightning_node_id: None,
             image_url: None,
+            video_url: None,
+            description: None,
             created_at,
         }
     }
@@ -793,6 +855,75 @@ mod tests {
         let result = dedup_tracks(vec![newer.clone(), older]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].created_at, newer.created_at);
+    }
+
+    // ─── parse_track_event tests ─────────────────────────────────
+
+    fn signed_track_event(content: &str, extra_tags: Vec<Tag>) -> Event {
+        let mut tags = vec![
+            Tag::custom(TagKind::custom("d"), vec!["demo".to_string()]),
+            Tag::custom(TagKind::custom("title"), vec!["Demo".to_string()]),
+        ];
+        tags.extend(extra_tags);
+        EventBuilder::new(Kind::Custom(KIND_TRACK), content)
+            .tags(tags)
+            .sign_with_keys(&Keys::generate())
+            .expect("sign")
+    }
+
+    #[test]
+    fn parse_track_reads_description_and_video_tag() {
+        let event = signed_track_event(
+            "  A song about giving.  ",
+            vec![Tag::custom(
+                TagKind::custom("video"),
+                vec!["https://media.lightning.fm/abc123".to_string()],
+            )],
+        );
+        let track = parse_track_event(&event).expect("parses");
+        assert_eq!(track.description.as_deref(), Some("A song about giving."));
+        assert_eq!(
+            track.video_url.as_deref(),
+            Some("https://media.lightning.fm/abc123")
+        );
+    }
+
+    #[test]
+    fn parse_track_video_from_imeta_fallback() {
+        let event = signed_track_event(
+            "",
+            vec![
+                // Audio imeta must NOT be mistaken for a video
+                Tag::custom(
+                    TagKind::custom("imeta"),
+                    vec![
+                        "url https://media.lightning.fm/audio".to_string(),
+                        "m audio/mpeg".to_string(),
+                    ],
+                ),
+                Tag::custom(
+                    TagKind::custom("imeta"),
+                    vec![
+                        "url https://media.lightning.fm/video".to_string(),
+                        "m video/mp4".to_string(),
+                    ],
+                ),
+            ],
+        );
+        let track = parse_track_event(&event).expect("parses");
+        assert_eq!(
+            track.video_url.as_deref(),
+            Some("https://media.lightning.fm/video")
+        );
+        assert!(track.description.is_none(), "empty content is no description");
+    }
+
+    #[test]
+    fn parse_track_without_video_or_description() {
+        let event = signed_track_event("", vec![]);
+        let track = parse_track_event(&event).expect("parses");
+        assert!(track.video_url.is_none());
+        assert!(track.description.is_none());
     }
 
     // ─── build_profile_content tests ────────────────────────────

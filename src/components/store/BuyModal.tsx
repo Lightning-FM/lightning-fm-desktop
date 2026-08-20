@@ -111,9 +111,14 @@ export function BuyModal({ product, artistName, onClose, onPurchased }: BuyModal
             <div>
               <p className="font-body-mono text-foreground">{product.title}</p>
               <p className="font-small text-secondary-foreground">{artistName}</p>
-              {product.summary && (
-                <p className="font-small text-muted-foreground mt-1">{product.summary}</p>
-              )}
+              <p className="font-small text-muted-foreground mt-2">
+                Buying gets you the{" "}
+                {product.summary ||
+                  (product.format
+                    ? `${product.format.toUpperCase()} download`
+                    : "download")}
+                . Streaming stays free for everyone.
+              </p>
             </div>
             <button
               className="w-full h-9 border border-amber text-amber font-label-mono uppercase tracking-wider text-[12px] hover:bg-amber/10 transition-all tabular-nums"

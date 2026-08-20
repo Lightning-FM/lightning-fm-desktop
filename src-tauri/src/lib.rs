@@ -7,8 +7,6 @@ mod products;
 mod purchases;
 mod upload;
 mod playback;
-mod credits;
-mod streaming;
 mod events;
 mod metadata;
 mod waveform;
@@ -18,8 +16,6 @@ use tauri::Manager;
 use node::LdkState;
 use identity::IdentityState;
 use relay::RelayState;
-use credits::CreditsState;
-use streaming::StreamingState;
 use commands::{
     // LDK node
     ldk_start, ldk_stop, ldk_get_info, ldk_get_balance, ldk_list_channels, ldk_new_address, ldk_get_mnemonic,
@@ -44,12 +40,8 @@ use commands::{
     // Channel management
     ldk_open_channel, ldk_connect_peer,
     // Playback
-    playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
+    playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats,
     catalog_load_batch, get_test_data_dir,
-    // Credits
-    credits_info, credits_deduct,
-    // Streaming payments
-    stream_start, stream_tick, stream_pause, stream_resume, stream_stop, stream_info,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,8 +52,6 @@ pub fn run() {
         .manage(LdkState::new())
         .manage(IdentityState::new())
         .manage(RelayState::new())
-        .manage(CreditsState::new())
-        .manage(StreamingState::new())
         .manage(purchases::PurchasesState::new())
         .invoke_handler(tauri::generate_handler![
             // LDK node
@@ -87,12 +77,8 @@ pub fn run() {
             // Channel management
             ldk_open_channel, ldk_connect_peer,
             // Playback
-            playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats, playback_start,
+            playback_fetch, playback_load_local, playback_read_audio, playback_cache_stats,
             catalog_load_batch, get_test_data_dir,
-            // Credits
-            credits_info, credits_deduct,
-            // Streaming payments
-            stream_start, stream_tick, stream_pause, stream_resume, stream_stop, stream_info,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Lightning FM")

@@ -22,6 +22,7 @@ function makeTrack(overrides: Partial<UploadTrack> = {}): UploadTrack {
     description: "",
     isExplicit: false,
     isrc: "",
+    videoUrl: "",
     duration: 180,
     format: "MP3",
     bitDepth: null,
