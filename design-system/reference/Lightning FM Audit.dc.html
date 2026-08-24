@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#F7F2E6; color:#171208; -webkit-font-smoothing:antialiased; }
+  a { color:#8A5E00; }
+  a:hover { color:#171208; }
+</style>
+</helmet>
+
+<div style="background:#F7F2E6; min-height:100vh; font-family:Inter, system-ui, sans-serif; padding:0 24px 120px">
+  <div style="max-width:1080px; margin:0 auto">
+
+    <header style="display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:24px; padding:56px 0 20px; border-bottom:2px solid #171208">
+      <div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; margin-bottom:14px">Design + build audit</div>
+        <h1 style="font-family:'JetBrains Mono', monospace; font-size:44px; font-weight:700; line-height:1.08; letter-spacing:-0.02em; margin:0">lightning.fm<br>homepage audit</h1>
+      </div>
+      <div style="font-family:'JetBrains Mono', monospace; font-size:12px; line-height:2; color:#5C513D; text-align:right">
+        <div>scope &nbsp;· &nbsp;homepage + site shell</div>
+        <div>source &nbsp;· &nbsp;maml/lightning-fm @ main</div>
+        <div>reader &nbsp;· &nbsp;musicians new to bitcoin</div>
+        <div>date &nbsp;· &nbsp;2026-08-21</div>
+      </div>
+    </header>
+
+    <section style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:1px; background:#171208; border:2px solid #171208; margin-top:40px">
+      <div style="background:#F7F2E6; padding:20px 22px">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:34px; font-weight:700; line-height:1; color:#B62324">{{ nCritical }}</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-top:8px">Critical</div>
+      </div>
+      <div style="background:#F7F2E6; padding:20px 22px">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:34px; font-weight:700; line-height:1; color:#8A5E00">{{ nHigh }}</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-top:8px">High</div>
+      </div>
+      <div style="background:#F7F2E6; padding:20px 22px">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:34px; font-weight:700; line-height:1; color:#4A4232">{{ nMedium }}</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-top:8px">Medium</div>
+      </div>
+      <div style="background:#F7F2E6; padding:20px 22px">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:34px; font-weight:700; line-height:1; color:#8A8172">{{ nLow }}</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-top:8px">Low</div>
+      </div>
+    </section>
+
+    <section style="margin-top:48px; max-width:660px">
+      <h2 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#171208; margin:0 0 18px">The short version</h2>
+      <p style="font-size:17px; line-height:1.65; color:#4A4232; margin:0 0 16px; text-wrap:pretty">The positioning is sharp and the writing is disciplined. Every fee claim on the page is cited and dated, no fake artist data ships, and the fee chart has a screen-reader description written by someone who cared. That is rarer than it should be.</p>
+      <p style="font-size:17px; line-height:1.65; color:#4A4232; margin:0 0 16px; text-wrap:pretty">The two problems that cost you the most are both about a gap between promise and delivery. A music platform's homepage plays no music: the hero shows a mock storefront with <span style="font-family:'JetBrains Mono', monospace; font-size:15px">[your album]</span> in it. And the two loudest buttons say "start selling" and "claim your artist page", then scroll to a form that asks for an email and says someone will be in touch.</p>
+      <p style="font-size:17px; line-height:1.65; color:#4A4232; margin:0; text-wrap:pretty">Under that sits a vocabulary problem. You told me the reader is a musician new to all of this. The word "sats" arrives in the first sentence under the headline, and "Nostr events signed by your key" is the opening line of the section addressed to artists. Fourteen articles that would fix this exist at <span style="font-family:'JetBrains Mono', monospace; font-size:15px">/learn</span>, linked only from the footer.</p>
+    </section>
+
+    <sc-if value="{{ showScreen }}" hint-placeholder-val="{{ true }}">
+    <section style="margin-top:80px">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:16px; border-bottom:1px solid #171208; padding-bottom:12px; margin-bottom:40px">
+        <h2 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; margin:0">Annotated homepage</h2>
+        <span style="font-family:'JetBrains Mono', monospace; font-size:12px; color:#5C513D">amber numbers key to the findings below</span>
+      </div>
+
+      <div style="display:flex; gap:56px; align-items:flex-start; flex-wrap:wrap">
+        <div style="flex:0 0 600px; max-width:100%; border:2px solid #171208; background:#F7F2E6; box-shadow:8px 8px 0 rgba(23,18,8,0.14)">
+
+          <div style="position:relative; display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid #171208; gap:12px">
+            <div style="position:absolute; left:-16px; top:8px; display:flex; flex-direction:column; gap:4px">
+              <span style="width:26px; height:26px; background:#8A5E00; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">6</span>
+              <span style="width:26px; height:26px; background:#8A5E00; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">7</span>
+            </div>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.06em">⚡ lightning.fm</span>
+            <span style="display:flex; align-items:center; gap:12px; font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:#5C513D">
+              <span>[ moonlight ]</span><span>Artists</span><span>Download</span><span>Pricing</span>
+              <span style="border:1px solid #8A5E00; color:#8A5E00; padding:5px 9px; background:rgba(232,169,23,0.25)">Start selling</span>
+            </span>
+          </div>
+
+          <div style="position:relative; display:grid; grid-template-columns:1fr 1fr; gap:22px; padding:32px 18px 36px">
+            <div style="position:absolute; left:-16px; top:24px; display:flex; flex-direction:column; gap:4px">
+              <span style="width:26px; height:26px; background:#B62324; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">1</span>
+              <span style="width:26px; height:26px; background:#B62324; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">2</span>
+              <span style="width:26px; height:26px; background:#8A5E00; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">3</span>
+              <span style="width:26px; height:26px; background:#8A5E00; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">8</span>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono', monospace; font-size:19px; font-weight:700; line-height:1.14; letter-spacing:-0.01em">Sell your music directly to fans.<br>Keep 100%.</div>
+              <div style="font-size:11px; line-height:1.6; color:#4A4232; margin-top:12px">Stream free, sell direct, keep every <span style="background:rgba(232,169,23,0.5); padding:0 2px">sat</span>. Payments settle instantly to your wallet when a purchase is made.</div>
+              <div style="display:flex; align-items:center; gap:14px; margin-top:18px">
+                <span style="background:#E8A917; border:2px solid #171208; box-shadow:3px 3px 0 #171208; padding:10px 14px; font-family:'JetBrains Mono', monospace; font-size:9px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase">Claim your artist page</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:9px; color:#8A5E00">See how it works →</span>
+              </div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono', monospace; font-size:8px; letter-spacing:0.1em; text-transform:uppercase; color:#5C513D; margin-bottom:7px">Your storefront · live the day you upload</div>
+              <div style="background:#FFFDF6; border:2px solid #171208; box-shadow:3px 3px 0 #171208; padding:14px; display:flex; flex-direction:column; gap:11px">
+                <div style="display:flex; gap:11px; align-items:center">
+                  <div style="width:44px; height:44px; flex-shrink:0; border:1px solid #171208; display:flex; align-items:center; justify-content:center; font-family:'JetBrains Mono', monospace; font-size:7px; color:#5C513D; background:repeating-linear-gradient(45deg,#EFE7D2,#EFE7D2 5px,#D8CFB8 5px,#D8CFB8 10px)">ART</div>
+                  <div>
+                    <div style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:700">[your album]</div>
+                    <div style="font-size:9px; color:#5C513D; margin-top:2px">[your artist name] · 9 tracks · lossless</div>
+                  </div>
+                </div>
+                <div style="border-top:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:9px">
+                  <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #D8CFB8"><span>01 · [track one]</span><span style="color:#5C513D">▸ streams free</span></div>
+                  <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #D8CFB8"><span>02 · [track two]</span><span style="color:#5C513D">▸ streams free</span></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center">
+                  <div><div style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700">$10</div><div style="font-size:8px; color:#5C513D">paid to your wallet directly</div></div>
+                  <span style="font-family:'JetBrains Mono', monospace; font-size:8px; letter-spacing:0.12em; text-transform:uppercase; border:1px solid #8A5E00; color:#8A5E00; padding:7px 11px">[ Buy album ]</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="position:relative; padding:24px 18px 30px; border-top:1px dashed #D8CFB8">
+            <div style="position:absolute; left:-16px; top:18px; display:flex; flex-direction:column; gap:4px">
+              <span style="width:26px; height:26px; background:#8A5E00; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">4</span>
+              <span style="width:26px; height:26px; background:#8A5E00; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">5</span>
+            </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:14px">How it works</div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px">
+              <div style="border:1px solid #171208; padding:12px 11px"><div style="font-family:'JetBrains Mono', monospace; font-size:8px; color:#4A4232; margin-bottom:6px">ARTISTS</div><div style="font-size:9px; line-height:1.6; color:#4A4232">Publish once, own it forever. Your catalog is <span style="background:rgba(232,169,23,0.5); padding:0 2px">Nostr events signed by your key</span>. Switch relays and your listeners follow.</div></div>
+              <div style="border:1px solid #171208; padding:12px 11px"><div style="font-family:'JetBrains Mono', monospace; font-size:8px; color:#4A4232; margin-bottom:6px">LISTENERS</div><div style="font-size:9px; line-height:1.6; color:#4A4232">Press play. That's it. Every track streams free: no account, no signup, no meter running.</div></div>
+              <div style="border:1px solid #171208; padding:12px 11px"><div style="font-family:'JetBrains Mono', monospace; font-size:8px; color:#4A4232; margin-bottom:6px">PRODUCERS &amp; MACHINES</div><div style="font-size:9px; line-height:1.6; color:#4A4232">Every purchase is one invoice, instant delivery, and a cryptographic receipt.</div></div>
+            </div>
+          </div>
+
+          <div style="position:relative; padding:24px 18px 30px; border-top:1px dashed #D8CFB8">
+            <div style="position:absolute; left:-16px; top:18px"><span style="width:26px; height:26px; background:#4A4232; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">12</span></div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:10px">Keep your Bandcamp</div>
+            <div style="border:1px solid #171208; padding:16px 14px">
+              <div style="font-family:'JetBrains Mono', monospace; font-size:8px; color:#4A4232; margin-bottom:10px">ON A $10 DIGITAL ALBUM</div>
+              <div style="font-family:'JetBrains Mono', monospace; font-size:10px; line-height:2">
+                <div style="display:flex; gap:10px; align-items:baseline"><span style="width:78px; flex-shrink:0; color:#4A4232">BANDCAMP</span><span style="letter-spacing:-0.5px; white-space:nowrap"><span style="color:#E8A917">████████████████</span><span style="color:#5C513D">░░░░</span></span><span style="color:#4A4232; white-space:nowrap">artist ~$8.00</span></div>
+                <div style="display:flex; gap:10px; align-items:baseline"><span style="width:78px; flex-shrink:0; color:#4A4232">LIGHTNING FM</span><span style="letter-spacing:-0.5px; white-space:nowrap; color:#E8A917">████████████████████</span><span style="white-space:nowrap">artist $10.00</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="position:relative; padding:24px 18px 30px; border-top:1px dashed #D8CFB8">
+            <div style="position:absolute; left:-16px; top:18px; display:flex; flex-direction:column; gap:4px">
+              <span style="width:26px; height:26px; background:#4A4232; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">11</span>
+            </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:14px">The zero is structural</div>
+            <div style="border:1px solid #171208; padding:16px 14px">
+              <div style="font-family:'JetBrains Mono', monospace; font-size:10px; line-height:2; white-space:nowrap; overflow:hidden; position:relative">
+                <span style="color:#4A4232">BUYER'S WALLET</span><span style="color:#5C513D"> ────── </span><span style="color:#8A5E00">sats</span><span style="color:#5C513D"> ──────▶ </span><span style="color:#4A4232">ARTIST'S WA</span>
+                <span style="position:absolute; right:0; top:0; bottom:0; width:40px; background:linear-gradient(90deg, rgba(247,242,230,0), #F7F2E6)"></span>
+              </div>
+              <div style="font-family:'JetBrains Mono', monospace; font-size:9px; color:#5C513D">lightning.fm: renders the page. never holds the money.</div>
+            </div>
+          </div>
+
+          <div style="padding:24px 18px 30px; border-top:1px dashed #D8CFB8; opacity:0.5">
+            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:10px">Own what you buy</div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px">
+              <div style="border:1px solid #171208; height:52px"></div><div style="border:1px solid #171208; height:52px"></div><div style="border:1px solid #171208; height:52px"></div>
+            </div>
+          </div>
+
+          <div style="position:relative; padding:24px 18px 30px; border-top:1px dashed #D8CFB8">
+            <div style="position:absolute; left:-16px; top:18px; display:flex; flex-direction:column; gap:4px">
+              <span style="width:26px; height:26px; background:#4A4232; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">9</span>
+              <span style="width:26px; height:26px; background:#4A4232; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">10</span>
+            </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:14px">Pricing</div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px">
+              <div style="border:1px solid #171208; padding:12px 11px"><div style="font-family:'JetBrains Mono', monospace; font-size:14px; color:#8A5E00; font-weight:700">0 <span style="background:rgba(232,169,23,0.5)">sats</span></div><div style="font-size:8px; color:#5C513D; margin-top:4px">HOSTED · FREE</div></div>
+              <div style="border:1px solid #171208; padding:12px 11px"><div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700">~$10/mo</div><div style="font-size:8px; color:#5C513D; margin-top:4px">HOSTED · PRO</div></div>
+              <div style="border:1px solid #171208; padding:12px 11px"><div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700">open source</div><div style="font-size:8px; color:#5C513D; margin-top:4px">SELF-HOSTED</div></div>
+            </div>
+          </div>
+
+          <div style="position:relative; padding:24px 18px 34px; border-top:1px dashed #D8CFB8">
+            <div style="position:absolute; left:-16px; top:18px; display:flex; flex-direction:column; gap:4px">
+              <span style="width:26px; height:26px; background:#B62324; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">2</span>
+              <span style="width:26px; height:26px; background:#4A4232; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">16</span>
+            </div>
+            <div style="border:1px solid #8A5E00; padding:18px 16px; text-align:center">
+              <div style="font-family:'JetBrains Mono', monospace; font-size:8px; color:#4A4232; text-align:left; margin-bottom:10px">ARTIST EARLY ACCESS</div>
+              <div style="font-size:9px; line-height:1.6; color:#4A4232; text-align:left; margin-bottom:14px">We're onboarding a small group of artists for the beta. Leave an email and we'll set you up.</div>
+              <div style="display:flex; gap:8px; justify-content:center; margin-bottom:10px; font-family:'JetBrains Mono', monospace; font-size:8px; letter-spacing:0.1em; text-transform:uppercase">
+                <span style="border:1px solid #8A5E00; color:#8A5E00; background:rgba(232,169,23,0.25); padding:6px 11px">I Make Music</span>
+                <span style="border:1px solid #171208; color:#5C513D; padding:6px 11px">Both</span>
+                <span style="border:1px solid #171208; color:#5C513D; padding:6px 11px">I Listen</span>
+              </div>
+              <div style="display:flex; gap:6px; max-width:280px; margin:0 auto">
+                <span style="flex:1; border:1px solid #171208; padding:8px; font-family:'JetBrains Mono', monospace; font-size:9px; color:#5C513D; text-align:left">&gt; your@email.com</span>
+                <span style="border:1px solid #8A5E00; color:#8A5E00; padding:8px 10px; font-family:'JetBrains Mono', monospace; font-size:8px; letter-spacing:0.1em">[ GET EARLY ACCESS ]</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="position:relative; padding:14px 18px; border-top:1px solid #171208; display:flex; justify-content:space-between; gap:12px; font-family:'JetBrains Mono', monospace; font-size:9px; color:#5C513D">
+            <div style="position:absolute; left:-16px; top:10px; display:flex; flex-direction:column; gap:4px">
+              <span style="width:26px; height:26px; background:#8A5E00; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">5</span>
+              <span style="width:26px; height:26px; background:#4A4232; color:#F7F2E6; font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">14</span>
+            </div>
+            <span>Built on Nostr + Lightning: open protocols, no lock-in.</span>
+            <span style="display:flex; gap:10px"><span>Commitments</span><span style="background:rgba(232,169,23,0.5); padding:0 2px">Learn</span><span>GitHub</span></span>
+          </div>
+        </div>
+
+        <div style="flex:1 1 300px; min-width:260px; position:sticky; top:24px">
+          <div style="border:2px solid #171208; background:#FFFDF6; padding:20px 20px 22px">
+            <div style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:16px">Reading the pins</div>
+            <div style="display:flex; flex-direction:column; gap:12px; font-family:'JetBrains Mono', monospace; font-size:12px; color:#4A4232">
+              <div style="display:flex; gap:10px; align-items:center"><span style="width:22px; height:22px; flex-shrink:0; background:#B62324"></span><span>Critical &nbsp;— fix before more traffic</span></div>
+              <div style="display:flex; gap:10px; align-items:center"><span style="width:22px; height:22px; flex-shrink:0; background:#8A5E00"></span><span>High &nbsp;— costs you signups now</span></div>
+              <div style="display:flex; gap:10px; align-items:center"><span style="width:22px; height:22px; flex-shrink:0; background:#4A4232"></span><span>Medium &nbsp;— next sprint</span></div>
+              <div style="display:flex; gap:10px; align-items:center"><span style="width:22px; height:22px; flex-shrink:0; background:rgba(232,169,23,0.5)"></span><span>Highlight &nbsp;— jargon or dead end</span></div>
+            </div>
+            <p style="font-size:14px; line-height:1.6; color:#5C513D; margin:20px 0 0; padding-top:16px; border-top:1px solid #D8CFB8; text-wrap:pretty">Recreation built from <span style="font-family:'JetBrains Mono', monospace; font-size:12px">src/components/home/Landing.tsx</span>, not a screenshot. Note that <span style="font-family:'JetBrains Mono', monospace; font-size:12px">public/images/</span> already holds eight abstract album placeholders the hero could be using instead of the striped block. "Own what you buy" is collapsed, and the workstation and roadmap sections are left out for length. Pin numbers are fixed to a finding, so filtering the list below never re-keys them.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    </sc-if>
+
+    <section style="margin-top:96px">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:16px; border-bottom:1px solid #171208; padding-bottom:12px; margin-bottom:8px">
+        <h2 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; margin:0">Findings, in priority order</h2>
+        <span style="font-family:'JetBrains Mono', monospace; font-size:12px; color:#5C513D">{{ shownCount }} shown</span>
+      </div>
+
+      <sc-for list="{{ findings }}" as="f" hint-placeholder-count="6">
+        <article style="display:grid; grid-template-columns:64px 1fr; gap:0; border-bottom:1px solid #D8CFB8; padding:32px 0">
+          <div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:26px; font-weight:700; line-height:1; color:#171208">{{ f.num }}</div>
+          </div>
+          <div style="max-width:720px">
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:12px">
+              <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; padding:4px 8px; color: {{ f.sevText }}; background: {{ f.sevColor }}">{{ f.sev }}</span>
+              <span style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D">{{ f.area }}</span>
+            </div>
+            <h3 style="font-family:'JetBrains Mono', monospace; font-size:21px; font-weight:700; line-height:1.25; letter-spacing:-0.01em; margin:0 0 12px; text-wrap:pretty">{{ f.title }}</h3>
+            <p style="font-size:16px; line-height:1.65; color:#4A4232; margin:0; text-wrap:pretty">{{ f.body }}</p>
+            <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:18px; border-left:2px solid #8A5E00; padding:2px 0 2px 16px">
+                <div style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8A5E00; margin-bottom:6px">Fix</div>
+                <p style="font-size:16px; line-height:1.6; color:#171208; margin:0; text-wrap:pretty">{{ f.fix }}</p>
+              </div>
+              <div style="font-family:'JetBrains Mono', monospace; font-size:12px; color:#5C513D; margin-top:14px">{{ f.files }}</div>
+            </sc-if>
+          </div>
+        </article>
+      </sc-for>
+    </section>
+
+    <section style="margin-top:88px">
+      <h2 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; margin:0 0 8px; border-bottom:1px solid #171208; padding-bottom:12px">Already right — don't lose these</h2>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:28px; margin-top:28px">
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; margin-bottom:8px">Every fee number is cited</div>
+          <p style="font-size:15px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">The chart pulls its sources from a shared module with a checked date, so a claim can't ship without its citation. Keep that coupling.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; margin-bottom:8px">The ASCII chart is accessible</div>
+          <p style="font-size:15px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Block characters are hidden from assistive tech and paired with a written description of the same comparison. Most teams skip this.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; margin-bottom:8px">No fake artists</div>
+          <p style="font-size:15px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Bracketed placeholders instead of invented bands. Honest, and it reads as a template the visitor will fill. Worth keeping once real music is also on the page.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; margin-bottom:8px">Contrast ratios are in the tokens</div>
+          <p style="font-size:15px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Muted text carries its measured ratio in a comment, and faint text is marked large-only. That is a system that will hold up as it grows.</p>
+        </div>
+      </div>
+    </section>
+
+    <section style="margin-top:88px; border:2px solid #171208; background:#FFFDF6; padding:36px 32px">
+      <h2 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; margin:0 0 24px">If you only do four things</h2>
+      <div style="display:flex; flex-direction:column; gap:18px; max-width:760px">
+        <div style="display:flex; gap:16px; align-items:baseline"><span style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; color:#8A5E00; flex-shrink:0; width:52px">ONE</span><p style="font-size:17px; line-height:1.6; margin:0; text-wrap:pretty">Put a real, playable storefront in the hero. You already ship the player and the artist pages.</p></div>
+        <div style="display:flex; gap:16px; align-items:baseline"><span style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; color:#8A5E00; flex-shrink:0; width:52px">TWO</span><p style="font-size:17px; line-height:1.6; margin:0; text-wrap:pretty">Make the buttons tell the truth. "Join the artist beta" costs you nothing and loses no one at the form.</p></div>
+        <div style="display:flex; gap:16px; align-items:baseline"><span style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; color:#8A5E00; flex-shrink:0; width:52px">THREE</span><p style="font-size:17px; line-height:1.6; margin:0; text-wrap:pretty">Write the hero in dollars. Introduce sats and Nostr once, lower down, each with one plain sentence.</p></div>
+        <div style="display:flex; gap:16px; align-items:baseline"><span style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; color:#8A5E00; flex-shrink:0; width:52px">FOUR</span><p style="font-size:17px; line-height:1.6; margin:0; text-wrap:pretty">Promote Learn to the header and raise the base type size to 16px. Two small diffs, biggest effect per line changed.</p></div>
+      </div>
+    </section>
+
+    <footer style="margin-top:64px; padding-top:20px; border-top:1px solid #171208; display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; font-family:'JetBrains Mono', monospace; font-size:12px; color:#5C513D">
+      <span>lightning.fm homepage audit · {{ totalCount }}</span>
+      <span>read against maml/lightning-fm @ main</span>
+    </footer>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;severityFilter&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;All&quot;,&quot;High and above&quot;,&quot;Critical only&quot;],&quot;default&quot;:&quot;All&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Report&quot;},&quot;showFixes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Report&quot;},&quot;showAnnotatedScreen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Report&quot;}}">
+const SEV = {
+  CRITICAL: { bg: "#B62324", fg: "#F7F2E6" },
+  HIGH: { bg: "#8A5E00", fg: "#F7F2E6" },
+  MEDIUM: { bg: "#4A4232", fg: "#F7F2E6" },
+  LOW: { bg: "#8A8172", fg: "#171208" },
+};
+
+const ALL = [
+  {
+    sev: "CRITICAL", area: "Conversion",
+    title: "A music platform whose homepage plays no music",
+    body: "The hero visual is a static mock of a storefront filled with [your album] and [your artist name]. Nothing on the page makes a sound. A musician deciding whether to publish here cannot hear or click what their page would actually be, and a listener has nothing to react to at all.",
+    fix: "Embed one real artist storefront in the hero with a working play button. You already ship /a/[npub] pages, a PlayerBar and a waveform component — the hero can be the live thing rather than a drawing of it. Keep the bracketed template mock as a secondary panel if it is doing work.",
+    files: "home/StorefrontCard.tsx · player/PlayerBar.tsx · app/a/[npub]/page.tsx",
+  },
+  {
+    sev: "CRITICAL", area: "Conversion",
+    title: "Both top buttons promise a page and deliver a mailing list",
+    body: "The header says \"Start selling\" and the hero says \"Claim your artist page\". Both scroll to a section that reads \"leave an email and we'll set you up\". The gap between the click and what happens next is where motivated people give up, and it is the one moment on the page where you had their full intent.",
+    fix: "Either make the labels honest — \"Join the artist beta\" — or make the button start something real. If the beta is genuinely gated, say so at the button, not after the scroll.",
+    files: "home/Landing.tsx (header + hero) · terminal/SignupForm.tsx",
+  },
+  {
+    sev: "HIGH", area: "Copy",
+    title: "\"Sats\" arrives in the first sentence under the headline",
+    body: "You are writing for musicians new to bitcoin. The sub-headline says \"keep every sat\", and pricing leads with \"0 sats\". The word is never defined on the page. Unfamiliar vocabulary in the first paragraph reads as a signal that the reader is not the intended audience.",
+    fix: "Write the hero entirely in dollars — the \"$10 stays $10\" framing is already the strongest line you have. Introduce sats once, further down, with a single parenthetical: the smallest unit of a bitcoin.",
+    files: "home/Landing.tsx (hero, pricing section)",
+  },
+  {
+    sev: "HIGH", area: "Copy",
+    title: "The artist pane opens with the mechanism, not the benefit",
+    body: "The first thing the ARTISTS panel says is that your catalog is Nostr events signed by your key. For this reader that sentence has three unknowns in it. The benefit underneath — nobody can take your page away — is the part they came for and it arrives second.",
+    fix: "Lead with what it means: your page, your catalog and your audience move with you, and no one can take them. Then explain the mechanism in the next sentence, linking to /learn/nostr-music for anyone who wants it.",
+    files: "home/Landing.tsx (how-it-works panes)",
+  },
+  {
+    sev: "HIGH", area: "Information architecture",
+    title: "Fourteen explainer articles, linked only from the footer",
+    body: "/learn has articles on fees, exit rights, frozen funds, getting started and selling music for bitcoin. For a reader new to all of this, that library is the single best asset the site has. The header offers Artists, Download and Pricing; Learn appears once, in the footer, below everything.",
+    fix: "Put Learn in the header. Then surface two or three specific articles inline where the questions come up — the fee comparison should link to /learn/fees, the exit-rights claim to /learn/exit-rights.",
+    files: "home/Landing.tsx (nav + footer) · app/learn/*",
+  },
+  {
+    sev: "HIGH", area: "Brand",
+    title: "The logo is an emoji, so it is different on every device",
+    body: "The wordmark is the ⚡ character followed by text. It renders as a different drawing on macOS, Windows, Android and each browser, cannot be reproduced in one colour, and does not scale down cleanly. The favicon is a third, unrelated bolt shape. There is currently no artwork you own.",
+    fix: "Commission or pick one drawn mark and use it everywhere: wordmark, favicon, OG image, desktop app. Four directions accompany this audit. Also make the header wordmark a link to /.",
+    files: "home/Landing.tsx (header + footer) · app/icon.svg · public/og-image.png",
+  },
+  {
+    sev: "HIGH", area: "Accessibility",
+    title: "Header nav hit targets are about a third of the minimum",
+    body: "The nav links are 11px uppercase text with no padding, giving a tappable area roughly 17px tall against a 44px minimum. On a phone the four links sit close together, so the most likely outcome of a tap is the wrong page.",
+    fix: "Give every nav link at least 44px of height through padding, and increase the label size. The uppercase mono style survives both changes.",
+    files: "home/Landing.tsx (nav) · ThemeToggle.tsx",
+  },
+  {
+    sev: "HIGH", area: "Typography",
+    title: "The whole page runs one size too small",
+    body: "Base font size is 14px, most body copy sits at 12 to 13px, and labels at 11px. The terminal aesthetic is well executed but it is being used to justify a page that is genuinely hard to read at arm's length — on the longest, most explanatory sections in particular.",
+    fix: "Move base to 16px, body copy to 15 to 16px, and set a floor of 12px for any interface text. The layout is generous enough to absorb it; nothing needs to be cut.",
+    files: "app/globals.css (body, .font-* utilities)",
+  },
+  {
+    sev: "MEDIUM", area: "Information architecture",
+    title: "Pricing exists twice, and the two can drift",
+    body: "The homepage has a full pricing section with three tiers, and /pricing is a separate page with its own copy. The header links to the page while the hero links in-page. Two places to update means one of them will eventually be wrong.",
+    fix: "Let the homepage section carry one line and a single number per tier, then send everyone to /pricing for the detail. One canonical source.",
+    files: "home/Landing.tsx (#pricing) · app/pricing/page.tsx",
+  },
+  {
+    sev: "MEDIUM", area: "Mobile",
+    title: "Pricing is hidden from the mobile header",
+    body: "The Pricing link is set to display only from the small breakpoint up. Phone visitors have no path to pricing from the top of the page — they have to scroll through six sections to find it. For a product whose central claim is about money, that is the wrong link to drop.",
+    fix: "Keep all four nav items on mobile, or collapse the nav into a menu that contains them all. Do not silently remove the pricing route.",
+    files: "home/Landing.tsx (nav, hidden sm:inline)",
+  },
+  {
+    sev: "MEDIUM", area: "Mobile",
+    title: "The money-flow diagram scrolls sideways on a phone",
+    body: "The buyer-to-artist flow is set as a single nowrap line inside a horizontal scroller. On a narrow screen the reader sees the beginning of the sentence and has to swipe to reach the artist's wallet — in a section whose entire point is that the money goes straight there.",
+    fix: "Stack the flow vertically below 640px: buyer, arrow, artist, one per line. The fee chart in the section above already handles this correctly; reuse that approach.",
+    files: "home/Landing.tsx (\"the zero is structural\")",
+  },
+  {
+    sev: "MEDIUM", area: "Visual design",
+    title: "Seven sections, one rhythm",
+    body: "Every section is a small uppercase heading, a paragraph, then a row of bordered panes. Repeated seven times with identical spacing, it flattens: nothing tells the reader which section is the argument and which is a detail. The page reads as a list of equally weighted panels.",
+    fix: "Vary the treatment deliberately. The fee comparison earns a full-bleed ink band and larger type; the how-it-works panes can be quieter. Two levels of emphasis are enough.",
+    files: "home/Landing.tsx (all sections) · terminal/Pane.tsx",
+  },
+  {
+    sev: "MEDIUM", area: "Performance",
+    title: "Two font families for a page that is almost entirely mono",
+    body: "The layout loads JetBrains Mono at three weights and Inter at two — five files. Inter is carrying body paragraphs that make up a small fraction of the visible page, and much of the interface is mono anyway.",
+    fix: "Either drop Inter and set body copy in JetBrains Mono at a comfortable size, or keep Inter and drop a mono weight. Either way you ship one fewer family.",
+    files: "app/layout.tsx (font imports) · app/globals.css",
+  },
+  {
+    sev: "MEDIUM", area: "SEO",
+    title: "The learn articles are questions, with no FAQ or Article markup",
+    body: "The homepage ships a careful JSON-LD graph. The fourteen learn pages, which are shaped exactly like the questions people search — can they freeze my funds, what are the fees — carry none. This is the cheapest organic traffic on the site and it is unmarked.",
+    fix: "Add Article schema to every learn page and FAQPage to the ones that answer a direct question. Reuse the pattern already established on the homepage.",
+    files: "app/learn/*/page.tsx · app/page.tsx (existing jsonLd)",
+  },
+  {
+    sev: "MEDIUM", area: "Accessibility",
+    title: "The \"portable\" tooltip is not linked to its trigger",
+    body: "The word is a button revealing a tooltip through hover and focus-within styling. There is no aria-describedby connecting the two, so a screen reader announces a button with no accessible explanation, and the definition it holds is one a new reader most needs.",
+    fix: "Give the tooltip an id and point the button at it with aria-describedby. Better still, promote the explanation to visible body copy — it is too important to hide behind a hover.",
+    files: "home/Landing.tsx (workstation PROFILE row)",
+  },
+  {
+    sev: "MEDIUM", area: "Conversion",
+    title: "Listeners who sign up get an artist's confirmation",
+    body: "The form lets people choose artist, both, or listener, then always confirms with \"artist beta onboarding now\". Someone who identified as a listener is told about a programme that is not theirs, at the exact moment you had their attention.",
+    fix: "Branch the success message on the selected type. If listeners genuinely have nothing to join yet, tell them what they will get and when.",
+    files: "terminal/SignupForm.tsx (success state)",
+  },
+  {
+    sev: "LOW", area: "Accessibility",
+    title: "The theme toggle's label and its state disagree",
+    body: "The button reads [ moonlight ] when the light theme is active — the label names the destination while aria-pressed reports the current state. A screen reader announces \"moonlight, pressed\" or \"moonlight, not pressed\", neither of which is clear.",
+    fix: "Pick one model. Either a static label like \"Theme\" with aria-pressed, or keep the switching label and use aria-label to say what pressing it will do.",
+    files: "ThemeToggle.tsx",
+  },
+  {
+    sev: "LOW", area: "SEO",
+    title: "The :: separator spends title characters you need",
+    body: "Titles run \"Lightning FM :: Sell your music directly to fans. Keep 100%.\" against a display budget of roughly sixty characters. The separator and its spaces cost four of them on every page, and the brand leads on a site nobody is searching for by name yet.",
+    fix: "Put the promise first and the brand last with a plain separator. Keep :: in the interface where it belongs to the aesthetic.",
+    files: "app/layout.tsx (metadata.title)",
+  },
+];
+
+// Numbers are assigned once, from source order, so the pins on the annotated
+// screen keep pointing at the same finding no matter how the list is filtered.
+const NUMBERED = ALL.map((f, i) => ({
+  ...f,
+  num: String(i + 1).padStart(2, "0"),
+  sevColor: SEV[f.sev].bg,
+  sevText: SEV[f.sev].fg,
+}));
+
+const pad = (n) => String(n).padStart(2, "0");
+
+class Component extends DCLogic {
+  renderVals() {
+    const filter = this.props.severityFilter ?? "All";
+    const rank = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    const cut = filter === "Critical only" ? 0 : filter === "High and above" ? 1 : 3;
+    const findings = NUMBERED.filter((f) => rank[f.sev] <= cut);
+    const count = (sev) => NUMBERED.filter((f) => f.sev === sev).length;
+    return {
+      findings,
+      showFixes: this.props.showFixes ?? true,
+      showScreen: this.props.showAnnotatedScreen ?? true,
+      shownCount: pad(findings.length) + " of " + pad(NUMBERED.length),
+      nCritical: pad(count("CRITICAL")),
+      nHigh: pad(count("HIGH")),
+      nMedium: pad(count("MEDIUM")),
+      nLow: pad(count("LOW")),
+      totalCount: NUMBERED.length + " findings",
+    };
+  }
+}
+</script>
+</body>
+</html>

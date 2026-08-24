@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { IdentityInfo } from "../types/streaming";
+import { Wordmark } from "./Wordmark";
 
 interface StatusBarProps {
   trackCount: number;
@@ -14,7 +15,7 @@ export const StatusBar = memo(function StatusBar({
 }: StatusBarProps) {
   return (
     <div className="shrink-0 h-8 flex items-center px-4 gap-4 border-b border-border bg-background">
-      <span className="font-label-mono text-amber">&#9889; Lightning FM</span>
+      <Wordmark size={12} className="text-foreground" />
       <span className="font-small text-muted-foreground">
         {trackCount} tracks
       </span>

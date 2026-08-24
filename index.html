@@ -8,9 +8,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-    <!-- Apply the stored theme before first paint (Daylight is default). -->
+    <!-- Resolve the theme before first paint. lfm-theme stores the
+         SELECTED value: "daylight" | "moonlight" | "system" (absent =
+         system, so a fresh install follows the macOS appearance). System
+         is live, not read-once — the media-query listener keeps the app
+         following the OS when it flips while a window is open. The
+         lfm-theme-change event tells mounted switchers to re-read. -->
     <script>
-      try{if(localStorage.getItem("lfm-theme")==="moonlight")document.documentElement.classList.add("moonlight")}catch(e){}
+      try{var d=document.documentElement,m=matchMedia("(prefers-color-scheme: dark)");var r=function(){var v=null;try{v=localStorage.getItem("lfm-theme")}catch(e){}d.classList.toggle("moonlight",v==="moonlight"||(v!=="daylight"&&m.matches))};r();m.addEventListener("change",function(){r();dispatchEvent(new Event("lfm-theme-change"))})}catch(e){}
     </script>
   </head>
   <body>

@@ -10,6 +10,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { MaskedNsec } from "../MaskedNsec";
+import { Wordmark } from "../Wordmark";
 import { EncryptedBackup } from "../EncryptedBackup";
 
 interface IdentityInfo {
@@ -184,7 +185,9 @@ export function OnboardingView({ onComplete, onCancel }: OnboardingViewProps) {
       <div className="w-full max-w-md p-8">
         {/* Logo / Title */}
         <div className="text-center mb-8">
-          <div className="font-display text-amber mb-2">⚡ Lightning FM</div>
+          <div className="mb-2 flex justify-center text-foreground">
+            <Wordmark size={32} />
+          </div>
           <div className="font-body-mono text-secondary-foreground">
             {step === "choice" && "The music channel nobody can shut down."}
             {step === "create" && "Create your identity"}

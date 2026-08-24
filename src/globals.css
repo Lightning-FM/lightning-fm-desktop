@@ -95,6 +95,8 @@
   --secondary-foreground: #4A4232;
   --muted: #EFE7D2;
   --muted-foreground: #5C513D;
+  /* ThemeSwitcher glyph — a step behind nav links, never amber */
+  --theme-icon: #4A4232;
   --accent: #E8A917;
   --accent-foreground: #171208;
   --destructive: #B62324;
@@ -173,6 +175,8 @@
   --secondary-foreground: #A89274;
   --muted: #1E1E1E;
   --muted-foreground: #5C4F3A;
+  /* ThemeSwitcher glyph — matches the web repo's moonlight value */
+  --theme-icon: #F5E6C8;
   --accent: #E8A917;
   --accent-foreground: #0D0D0D;
   --destructive: #F85149;

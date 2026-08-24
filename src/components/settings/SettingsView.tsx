@@ -13,10 +13,11 @@
 // Identity backup (masked nsec reveal + ncryptsec export per
 // document:lfm_buzz_onboarding_ux_study).
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MaskedNsec } from "../MaskedNsec";
 import { EncryptedBackup } from "../EncryptedBackup";
+import { ThemeSwitcher, readSelected, subscribe } from "../ThemeSwitcher";
 
 interface ProfileData {
   name: string | null;
@@ -48,51 +49,34 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "identity", label: "Identity" },
 ];
 
-// Daylight is the default; Moonlight is the amber-on-black complement.
-// The class lives on <html> (applied before first paint by index.html);
-// the same "lfm-theme" localStorage key the site's toggle uses.
-type Theme = "daylight" | "moonlight";
-
-function readTheme(): Theme {
-  return document.documentElement.classList.contains("moonlight")
-    ? "moonlight"
-    : "daylight";
-}
-
+// Three-state theme control (design-system/DECISIONS.md § Theme): one
+// cycling icon button, daylight → moonlight → system, never a segmented
+// control or aria-pressed toggle. `lfm-theme` stores the SELECTED value
+// (absent = system); the pre-paint script in index.html resolves system
+// from the OS appearance, live. Same key the site's switcher uses.
 function AppearanceSection() {
-  const [theme, setTheme] = useState<Theme>(readTheme);
-
-  const apply = (next: Theme) => {
-    document.documentElement.classList.toggle("moonlight", next === "moonlight");
-    try {
-      localStorage.setItem("lfm-theme", next);
-    } catch {
-      // storage unavailable: theme still applies for this session
-    }
-    setTheme(next);
-  };
+  const selected = useSyncExternalStore(subscribe, readSelected, () => "system" as const);
+  const resolvedHint =
+    selected === "system"
+      ? "Following the macOS appearance"
+      : selected === "moonlight"
+        ? "Moonlight for the dark room"
+        : "Daylight for the studio window";
 
   return (
     <div className="p-6 max-w-lg">
       <Field
         label="Theme"
-        hint="Daylight for the studio window, Moonlight for the dark room"
+        hint="Click to cycle daylight, moonlight, or follow the system"
       >
-        <div className="flex gap-2">
-          {(["daylight", "moonlight"] as const).map((t) => (
-            <button
-              key={t}
-              aria-pressed={theme === t}
-              className={`font-body-mono px-3 py-1.5 text-[13px] capitalize transition-all ${
-                theme === t
-                  ? "text-amber bg-amber/10 border border-amber"
-                  : "text-secondary-foreground hover:text-foreground border border-border"
-              }`}
-              onClick={() => apply(t)}
-            >
-              {t}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <ThemeSwitcher />
+          <span className="font-body-mono text-secondary-foreground capitalize">
+            {selected}
+          </span>
+          <span className="font-small text-muted-foreground">
+            {resolvedHint}
+          </span>
         </div>
       </Field>
     </div>

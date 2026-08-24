@@ -6,6 +6,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { UploadTrack } from "./types";
+import { SlashMark } from "../Wordmark";
 
 interface PublishConfirmationProps {
   tracks: UploadTrack[];
@@ -41,8 +42,9 @@ export function PublishConfirmation({
           on the confirmation of the publish that took the artist 0 → 1 */}
       {firstUpload ? (
         <div className="shrink-0 px-6 py-8 border-b border-amber/40 bg-amber/5 text-center">
-          <div className="font-heading-2 text-amber mb-2">
-            ⚡ YOU&apos;RE ON LIGHTNING FM
+          <div className="font-heading-2 text-amber mb-2 flex items-center justify-center gap-2">
+            <SlashMark box={20} />
+            <span>YOU&apos;RE ON LIGHTNING FM</span>
           </div>
           <div className="font-body-mono text-secondary-foreground max-w-lg mx-auto">
             {tracks.length === 1 ? "Your first track is" : "Your first tracks are"}{" "}

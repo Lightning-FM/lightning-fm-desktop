@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#F7F2E6; color:#171208; -webkit-font-smoothing:antialiased; }
+  a { color:#8A5E00; }
+  a:hover { color:#171208; }
+</style>
+</helmet>
+
+<div style="background:#F7F2E6; font-family:Inter, system-ui, sans-serif; padding:56px 32px 120px">
+  <div style="max-width:1140px; margin:0 auto">
+
+    <header style="border-bottom:2px solid #171208; padding-bottom:24px; margin-bottom:48px">
+      <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; margin-bottom:14px">Component · mobile nav</div>
+      <h1 style="font-family:'JetBrains Mono', monospace; font-size:42px; font-weight:700; line-height:1.08; letter-spacing:-0.02em; margin:0 0 20px">The header at phone width</h1>
+      <p style="font-size:17px; line-height:1.65; color:#4A4232; max-width:64ch; margin:0; text-wrap:pretty">Finding 10 asked for every nav item to stay reachable on mobile, and the implementation delivered that with <span style="font-family:'JetBrains Mono', monospace; font-size:15px">flex-wrap</span>. Five links plus the theme icon need about 750px, so below that they wrap to three rows — and because the header is sticky, that block follows you down the page. A hamburger keeps the promise of finding 10 without spending a third of the viewport on it.</p>
+    </header>
+
+    <section style="display:flex; flex-wrap:wrap; gap:40px; align-items:flex-start; margin-bottom:48px">
+      <div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-bottom:12px">Live · 390px — tap it</div>
+        <div style="width:390px; border:2px solid #171208; background:#F7F2E6; box-shadow:6px 6px 0 rgba(23,18,8,0.14)">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:0 16px; border-bottom:2px solid #171208; background:#F7F2E6">
+            <span style="display:flex; align-items:center; padding:14px 0; margin-left:-1.5px; color:#171208">
+              <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true" style="margin-right:8px"><polygon points="7,92 37,8 59,8 29,92" fill="#171208"></polygon><polygon points="45,92 75,8 93,8 63,92" fill="#171208"></polygon></svg>
+              <span style="font-family:'JetBrains Mono', monospace; font-size:18px; font-weight:700; letter-spacing:-0.02em">lightning.fm</span>
+            </span>
+            <span style="display:flex; align-items:center; gap:2px">
+              <button type="button" aria-label="Theme: daylight. Change to moonlight." title="Theme: daylight. Change to moonlight." style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; background:none; border:none; padding:0; cursor:pointer; color:#4A4232">
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="5.5" fill="currentColor"></circle>
+                  <rect x="11" y="0" width="2" height="3.5" fill="currentColor"></rect><rect x="11" y="20.5" width="2" height="3.5" fill="currentColor"></rect>
+                  <rect x="0" y="11" width="3.5" height="2" fill="currentColor"></rect><rect x="20.5" y="11" width="3.5" height="2" fill="currentColor"></rect>
+                  <rect x="4" y="4" width="2.5" height="2.5" fill="currentColor"></rect><rect x="17.5" y="4" width="2.5" height="2.5" fill="currentColor"></rect>
+                  <rect x="4" y="17.5" width="2.5" height="2.5" fill="currentColor"></rect><rect x="17.5" y="17.5" width="2.5" height="2.5" fill="currentColor"></rect>
+                </svg>
+              </button>
+              <button type="button" onClick="{{ onToggle }}" aria-expanded="{{ expanded }}" aria-controls="lfm-mobile-menu" aria-label="{{ toggleLabel }}" style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; background:none; border:none; padding:0; cursor:pointer; color:#171208">{{ burgerEl }}</button>
+            </span>
+          </div>
+
+          <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
+            <div id="lfm-mobile-menu" style="border-bottom:2px solid #171208; background:#F7F2E6">
+              <sc-for list="{{ links }}" as="l" hint-placeholder-count="5">
+                <a href="{{ l.href }}" onClick="{{ l.onNavigate }}" style="display:flex; align-items:center; min-height:56px; padding:0 16px; border-bottom:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#4A4232; text-decoration:none" style-hover="background:#FFFDF6; color:#171208">{{ l.label }}</a>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <div style="padding:28px 16px 36px">
+            <div style="font-family:'JetBrains Mono', monospace; font-size:26px; font-weight:700; line-height:1.08; letter-spacing:-0.025em; margin-bottom:14px">Sell your music directly to fans. Keep 100%.</div>
+            <p style="font-size:16px; line-height:1.55; color:#4A4232; margin:0 0 20px">Streaming is free. When someone buys your album for $10, you get $10.</p>
+            <span style="background:#E8A917; border:2px solid #171208; box-shadow:4px 4px 0 #171208; font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; padding:15px 22px; display:inline-flex; align-items:center">Start selling</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1 1 320px; min-width:300px">
+        <div style="border:2px solid #171208; background:#FFFDF6; margin-bottom:20px">
+          <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 20px; border-bottom:1px solid #171208">Measurements</div>
+          <div style="padding:20px; font-family:'JetBrains Mono', monospace; font-size:13px; line-height:2.1; color:#4A4232">
+            <div>breakpoint &nbsp;· &nbsp;below 860px</div>
+            <div>bar height &nbsp;· &nbsp;52px</div>
+            <div>toggle &nbsp;· &nbsp;44 × 44, 18px glyph</div>
+            <div>row height &nbsp;· &nbsp;56px</div>
+            <div>row label &nbsp;· &nbsp;15px, 0.06em, uppercase</div>
+            <div>panel border &nbsp;· &nbsp;2px ink, bottom only</div>
+          </div>
+        </div>
+        <div style="border:2px solid #171208; background:#FFFDF6">
+          <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 20px; border-bottom:1px solid #171208">Why 860</div>
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; padding:20px; text-wrap:pretty">Measured, not guessed: the five links come to roughly 515px, the lockup 140px, the theme icon 44px, plus gaps — about 750px before it wraps. 860 leaves headroom for a sixth link without anyone revisiting this. Note that Tailwind's <span style="font-family:'JetBrains Mono', monospace; font-size:14px">md</span> is 768px and would still wrap; this needs a custom stop.</p>
+        </div>
+      </div>
+    </section>
+
+    <section style="border:2px solid #171208; background:#FFFDF6; margin-bottom:24px">
+      <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 24px; border-bottom:1px solid #171208">Closed and open, side by side</div>
+      <div style="padding:36px 24px; background:#F7F2E6; display:flex; flex-wrap:wrap; gap:32px; justify-content:center">
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-bottom:10px">Closed</div>
+          <div style="width:360px; border:2px solid #171208; background:#F7F2E6">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:0 16px; border-bottom:2px solid #171208">
+              <span style="display:flex; align-items:center; gap:8px; padding:14px 0; margin-left:-1.5px">
+                <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true"><polygon points="7,92 37,8 59,8 29,92" fill="#171208"></polygon><polygon points="45,92 75,8 93,8 63,92" fill="#171208"></polygon></svg>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:18px; font-weight:700; letter-spacing:-0.02em">lightning.fm</span>
+              </span>
+              <span style="display:flex; align-items:center; gap:2px">
+                <span style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; color:#4A4232">
+                  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5.5" fill="currentColor"></circle><rect x="11" y="0" width="2" height="3.5" fill="currentColor"></rect><rect x="11" y="20.5" width="2" height="3.5" fill="currentColor"></rect><rect x="0" y="11" width="3.5" height="2" fill="currentColor"></rect><rect x="20.5" y="11" width="3.5" height="2" fill="currentColor"></rect><rect x="4" y="4" width="2.5" height="2.5" fill="currentColor"></rect><rect x="17.5" y="4" width="2.5" height="2.5" fill="currentColor"></rect><rect x="4" y="17.5" width="2.5" height="2.5" fill="currentColor"></rect><rect x="17.5" y="17.5" width="2.5" height="2.5" fill="currentColor"></rect></svg>
+                </span>
+                <span style="width:44px; height:44px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px">
+                  <span style="width:18px; height:2px; background:#171208"></span>
+                  <span style="width:18px; height:2px; background:#171208"></span>
+                  <span style="width:18px; height:2px; background:#171208"></span>
+                </span>
+              </span>
+            </div>
+            <div style="height:104px; display:flex; align-items:center; justify-content:center; font-family:'JetBrains Mono', monospace; font-size:11px; color:#8A8172; background:repeating-linear-gradient(45deg,#F7F2E6,#F7F2E6 8px,#EFE7D2 8px,#EFE7D2 16px)">page</div>
+          </div>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-bottom:10px">Open</div>
+          <div style="width:360px; border:2px solid #171208; background:#F7F2E6">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:0 16px; border-bottom:2px solid #171208">
+              <span style="display:flex; align-items:center; gap:8px; padding:14px 0; margin-left:-1.5px">
+                <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true"><polygon points="7,92 37,8 59,8 29,92" fill="#171208"></polygon><polygon points="45,92 75,8 93,8 63,92" fill="#171208"></polygon></svg>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:18px; font-weight:700; letter-spacing:-0.02em">lightning.fm</span>
+              </span>
+              <span style="display:flex; align-items:center; gap:2px">
+                <span style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; color:#4A4232">
+                  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5.5" fill="currentColor"></circle><rect x="11" y="0" width="2" height="3.5" fill="currentColor"></rect><rect x="11" y="20.5" width="2" height="3.5" fill="currentColor"></rect><rect x="0" y="11" width="3.5" height="2" fill="currentColor"></rect><rect x="20.5" y="11" width="3.5" height="2" fill="currentColor"></rect><rect x="4" y="4" width="2.5" height="2.5" fill="currentColor"></rect><rect x="17.5" y="4" width="2.5" height="2.5" fill="currentColor"></rect><rect x="4" y="17.5" width="2.5" height="2.5" fill="currentColor"></rect><rect x="17.5" y="17.5" width="2.5" height="2.5" fill="currentColor"></rect></svg>
+                </span>
+                <span style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; position:relative">
+                  <span style="position:absolute; width:19px; height:2px; background:#171208; transform:rotate(45deg)"></span>
+                  <span style="position:absolute; width:19px; height:2px; background:#171208; transform:rotate(-45deg)"></span>
+                </span>
+              </span>
+            </div>
+            <div style="border-bottom:2px solid #171208">
+              <span style="display:flex; align-items:center; min-height:56px; padding:0 16px; border-bottom:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#4A4232">Listen</span>
+              <span style="display:flex; align-items:center; min-height:56px; padding:0 16px; border-bottom:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#4A4232">Artists</span>
+              <span style="display:flex; align-items:center; min-height:56px; padding:0 16px; border-bottom:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#4A4232">Learn</span>
+              <span style="display:flex; align-items:center; min-height:56px; padding:0 16px; border-bottom:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#4A4232">Pricing</span>
+              <span style="display:flex; align-items:center; min-height:56px; padding:0 16px; font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#4A4232">Start selling</span>
+            </div>
+            <div style="height:52px; display:flex; align-items:center; justify-content:center; font-family:'JetBrains Mono', monospace; font-size:11px; color:#8A8172; background:repeating-linear-gradient(45deg,#F7F2E6,#F7F2E6 8px,#EFE7D2 8px,#EFE7D2 16px)">page</div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:24px; border-top:1px solid #171208; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:28px">
+        <p style="font-size:16px; line-height:1.6; color:#171208; margin:0; text-wrap:pretty">The panel pushes the page down rather than floating over it. No overlay, no scrim, no scroll lock — with five links it is short enough that the page underneath is still context, not clutter.</p>
+        <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">The theme icon stays in the bar. It is 44px, it costs nothing to leave out in the open, and burying a preference two taps deep to save that space is a bad trade.</p>
+        <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">"Start selling" stays a plain row. The amber fill belongs to the hero CTA alone — that rule holds on mobile, where the two would otherwise sit 60px apart.</p>
+      </div>
+    </section>
+
+    <section style="border:2px solid #171208; background:#171208; padding:36px 32px">
+      <h2 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:#F5E6C8; margin:0 0 28px">Implementation notes</h2>
+      <div style="display:flex; flex-direction:column; gap:24px; max-width:76ch">
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">It belongs in SiteHeader, not the homepage</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">Build this inside the shared shell from <span style="font-family:'JetBrains Mono', monospace; font-size:14px">SITE_SHELL.md</span>, not in <span style="font-family:'JetBrains Mono', monospace; font-size:14px">Landing.tsx</span>. Every page inherits the mobile nav the moment it adopts the shell — and if the shell does not exist yet, this is a second reason to build it first.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">The toggle carries state, the panel carries an id</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty"><span style="font-family:'JetBrains Mono', monospace; font-size:14px">aria-expanded</span> on the button, <span style="font-family:'JetBrains Mono', monospace; font-size:14px">aria-controls</span> pointing at the panel's id, and an <span style="font-family:'JetBrains Mono', monospace; font-size:14px">aria-label</span> that names the action — "Open menu" / "Close menu". The glyph swaps bars for a cross; do not animate the morph.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">Close on Escape, on navigation, and on resize past the breakpoint</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">The last one is the easy miss: open the panel at 500px, rotate to landscape, and without it you get an open mobile panel underneath a full desktop nav. Return focus to the toggle when Escape closes it.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">The desktop nav stays exactly as it is</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">Above 860px nothing changes — same five links, same theme icon last, same 44px targets. Render one nav or the other at the breakpoint rather than restyling a single list, so the mobile rows are real 56px targets instead of desktop links with extra padding.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">Client component</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty"><span style="font-family:'JetBrains Mono', monospace; font-size:14px">SiteHeader</span> becomes <span style="font-family:'JetBrains Mono', monospace; font-size:14px">"use client"</span> once it holds open state — it already would, since <span style="font-family:'JetBrains Mono', monospace; font-size:14px">ThemeSwitcher</span> is a client component. Keep <span style="font-family:'JetBrains Mono', monospace; font-size:14px">SiteFooter</span> a server component; it has no state.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1140,&quot;height&quot;:840}}">
+const LINKS = [
+  { label: "Listen", href: "#" },
+  { label: "Artists", href: "#" },
+  { label: "Learn", href: "#" },
+  { label: "Pricing", href: "#" },
+  { label: "Start selling", href: "#" },
+];
+
+class Component extends DCLogic {
+  state = { open: false };
+
+  componentDidMount() {
+    this.onKey = (e) => {
+      if (e.key === "Escape" && this.state.open) this.setState({ open: false });
+    };
+    window.addEventListener("keydown", this.onKey);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("keydown", this.onKey);
+  }
+
+  renderVals() {
+    const { open } = this.state;
+    const bar = { display: "block", width: 18, height: 2, background: "currentColor" };
+    const burgerEl = open
+      ? React.createElement(
+          "span",
+          { style: { position: "relative", width: 19, height: 19, display: "block" } },
+          React.createElement("span", { style: { position: "absolute", top: 8, left: 0, ...bar, transform: "rotate(45deg)" } }),
+          React.createElement("span", { style: { position: "absolute", top: 8, left: 0, ...bar, transform: "rotate(-45deg)" } })
+        )
+      : React.createElement(
+          "span",
+          { style: { display: "flex", flexDirection: "column", gap: 4 } },
+          React.createElement("span", { style: bar }),
+          React.createElement("span", { style: bar }),
+          React.createElement("span", { style: bar })
+        );
+
+    return {
+      open,
+      burgerEl,
+      expanded: open ? "true" : "false",
+      toggleLabel: open ? "Close menu" : "Open menu",
+      onToggle: () => this.setState((s) => ({ open: !s.open })),
+      links: LINKS.map((l) => ({
+        label: l.label,
+        href: l.href,
+        onNavigate: () => this.setState({ open: false }),
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>

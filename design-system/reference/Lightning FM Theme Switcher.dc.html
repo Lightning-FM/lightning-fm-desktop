@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#F7F2E6; color:#171208; -webkit-font-smoothing:antialiased; }
+  a { color:#8A5E00; }
+  a:hover { color:#171208; }
+</style>
+</helmet>
+
+<div style="background:#F7F2E6; font-family:Inter, system-ui, sans-serif; padding:56px 32px 120px">
+  <div style="max-width:1080px; margin:0 auto">
+
+    <header style="border-bottom:2px solid #171208; padding-bottom:24px; margin-bottom:48px">
+      <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; margin-bottom:14px">Component · theme switcher</div>
+      <h1 style="font-family:'JetBrains Mono', monospace; font-size:42px; font-weight:700; line-height:1.08; letter-spacing:-0.02em; margin:0 0 20px">Daylight, moonlight, system</h1>
+      <p style="font-size:17px; line-height:1.65; color:#4A4232; max-width:62ch; margin:0 0 14px; text-wrap:pretty">Three states cannot be a toggle. The current <span style="font-family:'JetBrains Mono', monospace; font-size:15px">[ moonlight ]</span> text button names the destination while its <span style="font-family:'JetBrains Mono', monospace; font-size:15px">aria-pressed</span> reports the current state — audit finding 17 — and a third option makes that label impossible to write honestly.</p>
+      <p style="font-size:17px; line-height:1.65; color:#4A4232; max-width:62ch; margin:0; text-wrap:pretty">Two ways out. <a href="#2a">2a</a> keeps one button but shows the state you are on rather than the one you are going to, as an icon. <a href="#1a">1a</a> stops hiding states altogether and puts all three side by side. They share one state on this page, so switching either moves the other. Which to take depends on where it lives — see <a href="#which">Which one</a>.</p>
+    </header>
+
+    <div id="2a" style="margin-bottom:56px">
+      <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:14px; margin-bottom:20px">
+        <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:700; letter-spacing:0.1em; background:#E8A917; color:#171208; padding:4px 8px">2a</span>
+        <h2 style="font-family:'JetBrains Mono', monospace; font-size:26px; font-weight:700; letter-spacing:-0.02em; margin:0">Direction B — cycling icon</h2>
+      </div>
+      <p style="font-size:17px; line-height:1.65; color:#4A4232; max-width:64ch; margin:0 0 28px; text-wrap:pretty">One button. The icon shows the theme you are on; clicking moves to the next. Both controls on this page share one state, so switching either moves the other.</p>
+
+      <section style="border:2px solid #171208; background: {{ p.card }}; margin-bottom:24px">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; padding:14px 24px; border-bottom:1px solid #171208; color: {{ p.muted }}">Live — click it</div>
+        <div style="padding:56px 32px; display:flex; flex-direction:column; align-items:center; gap:28px; background: {{ p.bg }}">
+          <button type="button" onClick="{{ onCycle }}" aria-label="{{ cycleLabel }}" title="{{ cycleLabel }}" style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; background:none; border:none; cursor:pointer; padding:0">
+            <sc-if value="{{ isDay }}" hint-placeholder-val="{{ true }}">
+              <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="5.5" fill="{{ iconFill }}"></circle>
+                <rect x="11" y="0" width="2" height="3.5" fill="{{ iconFill }}"></rect>
+                <rect x="11" y="20.5" width="2" height="3.5" fill="{{ iconFill }}"></rect>
+                <rect x="0" y="11" width="3.5" height="2" fill="{{ iconFill }}"></rect>
+                <rect x="20.5" y="11" width="3.5" height="2" fill="{{ iconFill }}"></rect>
+                <rect x="4" y="4" width="2.5" height="2.5" fill="{{ iconFill }}"></rect>
+                <rect x="17.5" y="4" width="2.5" height="2.5" fill="{{ iconFill }}"></rect>
+                <rect x="4" y="17.5" width="2.5" height="2.5" fill="{{ iconFill }}"></rect>
+                <rect x="17.5" y="17.5" width="2.5" height="2.5" fill="{{ iconFill }}"></rect>
+              </svg>
+            </sc-if>
+            <sc-if value="{{ isNight }}" hint-placeholder-val="{{ false }}">
+              <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                <mask id="lfm-moon-live"><rect width="24" height="24" fill="#fff"></rect><circle cx="18" cy="7" r="8.5" fill="#000"></circle></mask>
+                <circle cx="12" cy="12" r="9" fill="{{ iconFill }}" mask="url(#lfm-moon-live)"></circle>
+              </svg>
+            </sc-if>
+            <sc-if value="{{ isAuto }}" hint-placeholder-val="{{ false }}">
+              <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="8" fill="none" stroke="{{ iconFill }}" stroke-width="2"></circle>
+                <path d="M12 3 A9 9 0 0 0 12 21 Z" fill="{{ iconFill }}"></path>
+              </svg>
+            </sc-if>
+          </button>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:13px; text-align:center; line-height:2; color: {{ p.muted }}">
+            <div>showing &nbsp;· &nbsp;<span style="color: {{ p.text }}">{{ selected }}</span></div>
+            <div>{{ nextHint }}</div>
+          </div>
+        </div>
+      </section>
+
+      <section style="border:2px solid #171208; background:#FFFDF6; margin-bottom:24px">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 24px; border-bottom:1px solid #171208">The set</div>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid #D8CFB8; background:#F7F2E6">
+          <div style="padding:36px 0 30px; display:flex; flex-direction:column; align-items:center; gap:16px; border-right:1px solid #D8CFB8">
+            <svg width="52" height="52" viewBox="0 0 24 24" role="img" aria-label="Daylight icon">
+              <circle cx="12" cy="12" r="5.5" fill="#171208"></circle>
+              <rect x="11" y="0" width="2" height="3.5" fill="#171208"></rect><rect x="11" y="20.5" width="2" height="3.5" fill="#171208"></rect>
+              <rect x="0" y="11" width="3.5" height="2" fill="#171208"></rect><rect x="20.5" y="11" width="3.5" height="2" fill="#171208"></rect>
+              <rect x="4" y="4" width="2.5" height="2.5" fill="#171208"></rect><rect x="17.5" y="4" width="2.5" height="2.5" fill="#171208"></rect>
+              <rect x="4" y="17.5" width="2.5" height="2.5" fill="#171208"></rect><rect x="17.5" y="17.5" width="2.5" height="2.5" fill="#171208"></rect>
+            </svg>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:#4A4232">Daylight</span>
+          </div>
+          <div style="padding:36px 0 30px; display:flex; flex-direction:column; align-items:center; gap:16px; border-right:1px solid #D8CFB8">
+            <svg width="52" height="52" viewBox="0 0 24 24" role="img" aria-label="Moonlight icon">
+              <mask id="lfm-moon-set"><rect width="24" height="24" fill="#fff"></rect><circle cx="18" cy="7" r="8.5" fill="#000"></circle></mask>
+              <circle cx="12" cy="12" r="9" fill="#171208" mask="url(#lfm-moon-set)"></circle>
+            </svg>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:#4A4232">Moonlight</span>
+          </div>
+          <div style="padding:36px 0 30px; display:flex; flex-direction:column; align-items:center; gap:16px">
+            <svg width="52" height="52" viewBox="0 0 24 24" role="img" aria-label="System icon">
+              <circle cx="12" cy="12" r="8" fill="none" stroke="#171208" stroke-width="2"></circle>
+              <path d="M12 3 A9 9 0 0 0 12 21 Z" fill="#171208"></path>
+            </svg>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:#4A4232">System</span>
+          </div>
+        </div>
+        <div style="display:flex; align-items:flex-end; gap:36px; padding:28px 24px; border-bottom:1px solid #D8CFB8; flex-wrap:wrap">
+          <span style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; width:62px">Sizes</span>
+          <span style="display:flex; align-items:flex-end; gap:22px">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><mask id="lfm-moon-16"><rect width="24" height="24" fill="#fff"></rect><circle cx="18" cy="7" r="8.5" fill="#000"></circle></mask><circle cx="12" cy="12" r="9" fill="#171208" mask="url(#lfm-moon-16)"></circle></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><mask id="lfm-moon-20"><rect width="24" height="24" fill="#fff"></rect><circle cx="18" cy="7" r="8.5" fill="#000"></circle></mask><circle cx="12" cy="12" r="9" fill="#171208" mask="url(#lfm-moon-20)"></circle></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><mask id="lfm-moon-24"><rect width="24" height="24" fill="#fff"></rect><circle cx="18" cy="7" r="8.5" fill="#000"></circle></mask><circle cx="12" cy="12" r="9" fill="#171208" mask="url(#lfm-moon-24)"></circle></svg>
+          </span>
+          <span style="font-family:'JetBrains Mono', monospace; font-size:13px; color:#4A4232">22px in a 44px target. Below 16px the crescent closes up.</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:36px; padding:28px 24px; background:#0D0D0D; flex-wrap:wrap">
+          <span style="font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A775A; width:62px">Moonlight</span>
+          <span style="display:flex; align-items:center; gap:26px">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="5.5" fill="#F5E6C8"></circle>
+              <rect x="11" y="0" width="2" height="3.5" fill="#F5E6C8"></rect><rect x="11" y="20.5" width="2" height="3.5" fill="#F5E6C8"></rect>
+              <rect x="0" y="11" width="3.5" height="2" fill="#F5E6C8"></rect><rect x="20.5" y="11" width="3.5" height="2" fill="#F5E6C8"></rect>
+              <rect x="4" y="4" width="2.5" height="2.5" fill="#F5E6C8"></rect><rect x="17.5" y="4" width="2.5" height="2.5" fill="#F5E6C8"></rect>
+              <rect x="4" y="17.5" width="2.5" height="2.5" fill="#F5E6C8"></rect><rect x="17.5" y="17.5" width="2.5" height="2.5" fill="#F5E6C8"></rect>
+            </svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><mask id="lfm-moon-dk"><rect width="24" height="24" fill="#fff"></rect><circle cx="18" cy="7" r="8.5" fill="#000"></circle></mask><circle cx="12" cy="12" r="9" fill="#F5E6C8" mask="url(#lfm-moon-dk)"></circle></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="#F5E6C8" stroke-width="2"></circle><path d="M12 3 A9 9 0 0 0 12 21 Z" fill="#F5E6C8"></path></svg>
+          </span>
+          <span style="font-family:'JetBrains Mono', monospace; font-size:13px; color:#A89274">Bone, not amber — amber would read as a selected state.</span>
+        </div>
+        <div style="padding:24px; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:28px; border-top:1px solid #171208">
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Three circles rather than a sun, a moon and a monitor. A display icon for "system" is the common choice but it means the device, not the setting, and it breaks the family — these three read as one control.</p>
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">The half-filled circle is the standing convention for automatic contrast. It also happens to echo the split block in the logo explorations, so it does not arrive from nowhere.</p>
+        </div>
+      </section>
+
+      <section style="border:2px solid #171208; background:#FFFDF6; margin-bottom:24px">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 24px; border-bottom:1px solid #171208">In the nav</div>
+        <div style="padding:36px 24px; background:#F7F2E6">
+          <div style="border:2px solid #171208; background:#F7F2E6">
+            <div style="height:56px; border-bottom:2px solid #171208; display:flex; align-items:center; justify-content:space-between; padding:0 18px; gap:12px">
+              <span style="display:flex; align-items:center; gap:8px">
+                <svg width="17" height="17" viewBox="0 0 100 100" aria-hidden="true"><polygon points="7,92 37,8 59,8 29,92" fill="#171208"></polygon><polygon points="45,92 75,8 93,8 63,92" fill="#171208"></polygon></svg>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700">lightning.fm</span>
+              </span>
+              <span style="display:flex; align-items:center; gap:14px">
+                <span style="display:flex; gap:12px; font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#5C513D"><span>Listen</span><span>Artists</span><span>Learn</span><span>Pricing</span><span>Start selling</span></span>
+                <span style="width:32px; height:32px; display:flex; align-items:center; justify-content:center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5.5" fill="#4A4232"></circle>
+                    <rect x="11" y="0" width="2" height="3.5" fill="#4A4232"></rect><rect x="11" y="20.5" width="2" height="3.5" fill="#4A4232"></rect>
+                    <rect x="0" y="11" width="3.5" height="2" fill="#4A4232"></rect><rect x="20.5" y="11" width="3.5" height="2" fill="#4A4232"></rect>
+                    <rect x="4" y="4" width="2.5" height="2.5" fill="#4A4232"></rect><rect x="17.5" y="4" width="2.5" height="2.5" fill="#4A4232"></rect>
+                    <rect x="4" y="17.5" width="2.5" height="2.5" fill="#4A4232"></rect><rect x="17.5" y="17.5" width="2.5" height="2.5" fill="#4A4232"></rect>
+                  </svg>
+                </span>
+              </span>
+            </div>
+            <div style="height:120px; display:flex; align-items:center; justify-content:center; font-family:'JetBrains Mono', monospace; font-size:11px; color:#8A8172; background:repeating-linear-gradient(45deg,#F7F2E6,#F7F2E6 8px,#EFE7D2 8px,#EFE7D2 16px)">page</div>
+          </div>
+        </div>
+        <div style="padding:22px 24px 26px; border-top:1px solid #D8CFB8; display:grid; grid-template-columns:repeat(auto-fit, minmax(290px,1fr)); gap:28px">
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">This is where the icon approach earns its place: 44px square instead of 170px, so it fits the header at any width and needs no mobile special case.</p>
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Last item in the nav row, to the right of Start selling. No border and no fill — the glyph alone. A box around it would give a utility the same weight as the links, which is the problem the current text button already has.</p>
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Icon in <span style="font-family:'JetBrains Mono', monospace; font-size:14px">--text-secondary</span> rather than full ink, so it sits a step behind the links. Hover to <span style="font-family:'JetBrains Mono', monospace; font-size:14px">--text-primary</span>. Keep the 44px target even though the glyph is 18px.</p>
+        </div>
+      </section>
+
+      <section style="border:2px solid #171208; background:#171208; padding:32px; margin-bottom:24px">
+        <h3 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:#F5E6C8; margin:0 0 24px">What cycling costs, and how to pay it</h3>
+        <div style="display:flex; flex-direction:column; gap:22px; max-width:76ch">
+          <div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">Nothing tells you the third state exists</div>
+            <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">A user on daylight who wants system has to click twice, guessing, and will pass through moonlight to get there. With two states that was a non-issue; with three it is the real cost. Mitigate with a tooltip that names the next state, and accept that discovery is worse than the segmented control.</p>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">The accessible name must carry both halves</div>
+            <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">This is finding 17 again and it does not go away on its own — an icon has no text, so the label is all a screen reader gets. Use <span style="font-family:'JetBrains Mono', monospace; font-size:14px">aria-label="Theme: moonlight. Change to system."</span> — current state and next action, updated on every click. Do not use <span style="font-family:'JetBrains Mono', monospace; font-size:14px">aria-pressed</span>; the button is not a toggle. Announce the change with a live region if you want it confirmed.</p>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">System resolves to something the icon does not show</div>
+            <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">On system the half-circle says "following your OS" but not which way it landed. That is usually fine, since the page itself is the answer. It stops being fine if you ever show the icon away from the themed surface.</p>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">No spin, no crossfade</div>
+            <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">Swap the icon instantly. A rotating or morphing transition on top of an entire palette change is two animations fighting, and neither is guarded for reduced motion.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="which" style="border:2px solid #171208; background:#FFFDF6; padding:32px; scroll-margin-top:24px">
+        <h3 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; margin:0 0 20px">Which one</h3>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:28px">
+          <p style="font-size:16px; line-height:1.6; color:#171208; margin:0; text-wrap:pretty">Take <a href="#2a">2a</a>, the icon, if it stays in the header. It is the only one that fits there honestly, and theme switching is a thing people do once — poor discovery on a once-per-install action is a fair trade.</p>
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Take <a href="#1a">1a</a>, the segmented control, if it moves to the footer. With the room to show all three, there is no reason to hide two of them.</p>
+          <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Either way the storage, pre-paint and live-system notes at the bottom of this page apply unchanged — those are about behaviour, not shape.</p>
+        </div>
+      </section>
+    </div>
+
+    <div id="1a" style="display:flex; flex-wrap:wrap; align-items:baseline; gap:14px; margin-bottom:20px">
+      <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:700; letter-spacing:0.1em; background:#E8A917; color:#171208; padding:4px 8px">1a</span>
+      <h2 style="font-family:'JetBrains Mono', monospace; font-size:26px; font-weight:700; letter-spacing:-0.02em; margin:0">Direction A — segmented control</h2>
+    </div>
+
+    <section style="border:2px solid #171208; margin-bottom:24px; background: {{ p.card }}">
+      <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; padding:14px 24px; border-bottom:1px solid #171208; color: {{ p.muted }}">Live — click it</div>
+
+      <div style="padding:56px 32px; display:flex; flex-direction:column; align-items:center; gap:40px; background: {{ p.bg }}">
+        <div role="radiogroup" aria-label="Colour theme" style="display:inline-flex; border:2px solid {{ p.border }}">
+          <sc-for list="{{ options }}" as="o" hint-placeholder-count="3">
+            <button type="button" role="radio" aria-checked="{{ o.checked }}" onClick="{{ o.onSelect }}" style="font-family:'JetBrains Mono', monospace; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; padding:13px 22px; min-height:44px; border:none; cursor:pointer; background: {{ o.bg }}; color: {{ o.fg }}; font-weight: {{ o.weight }}; border-left: {{ o.divider }}">{{ o.label }}</button>
+          </sc-for>
+        </div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:13px; text-align:center; line-height:2; color: {{ p.muted }}">
+          <div>selected &nbsp;· &nbsp;<span style="color: {{ p.text }}">{{ selected }}</span></div>
+          <div>resolved &nbsp;· &nbsp;<span style="color: {{ p.amber }}">{{ resolved }}</span></div>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid #171208; padding:22px 24px; display:grid; grid-template-columns:repeat(auto-fit, minmax(270px,1fr)); gap:24px; background:#FFFDF6">
+        <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Selected is what the user chose and what gets stored. Resolved is what actually renders — they differ only when <span style="font-family:'JetBrains Mono', monospace; font-size:14px">system</span> is picked.</p>
+        <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">Keep both. Storing the resolved value instead is the common bug: the user picks system in daylight, and their choice silently freezes as daylight forever.</p>
+      </div>
+    </section>
+
+    <section style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:24px; margin-bottom:24px">
+      <div style="border:2px solid #171208; background:#FFFDF6">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 24px; border-bottom:1px solid #171208">Full — footer</div>
+        <div style="padding:40px 24px; display:flex; justify-content:center; background:#F7F2E6">
+          <div style="display:inline-flex; border:2px solid #171208">
+            <span style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; padding:13px 22px; background:rgba(232,169,23,0.25); color:#8A5E00">Daylight</span>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; padding:13px 22px; color:#4A4232; border-left:1px solid #171208">Moonlight</span>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; padding:13px 22px; color:#4A4232; border-left:1px solid #171208">System</span>
+          </div>
+        </div>
+        <div style="padding:20px 24px 26px; border-top:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:13px; line-height:2; color:#4A4232">
+          <div>height &nbsp;· &nbsp;44px</div>
+          <div>label &nbsp;· &nbsp;13px, 0.08em, uppercase</div>
+          <div>active &nbsp;· &nbsp;amber text on amber-glow fill, 600</div>
+          <div>width &nbsp;· &nbsp;~310px</div>
+        </div>
+      </div>
+
+      <div style="border:2px solid #171208; background:#FFFDF6">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 24px; border-bottom:1px solid #171208">Compact — header, if it must live there</div>
+        <div style="padding:40px 24px; display:flex; justify-content:center; background:#F7F2E6">
+          <div style="display:inline-flex; border:1px solid #171208">
+            <span style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; padding:11px 13px; background:rgba(232,169,23,0.25); color:#8A5E00">Day</span>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; padding:11px 13px; color:#4A4232; border-left:1px solid #171208">Night</span>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; padding:11px 13px; color:#4A4232; border-left:1px solid #171208">Auto</span>
+          </div>
+        </div>
+        <div style="padding:20px 24px 26px; border-top:1px solid #D8CFB8; font-family:'JetBrains Mono', monospace; font-size:13px; line-height:2; color:#4A4232">
+          <div>height &nbsp;· &nbsp;44px (padding, not font)</div>
+          <div>label &nbsp;· &nbsp;12px, abbreviated</div>
+          <div>border &nbsp;· &nbsp;1px, quieter than nav CTAs</div>
+          <div>width &nbsp;· &nbsp;~170px</div>
+        </div>
+      </div>
+    </section>
+
+    <section style="border:2px solid #171208; background:#0D0D0D; margin-bottom:24px">
+      <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#8A775A; padding:14px 24px; border-bottom:1px solid #2A2520">Moonlight</div>
+      <div style="padding:44px 24px; display:flex; justify-content:center; gap:32px; flex-wrap:wrap">
+        <div style="display:inline-flex; border:2px solid #E8A917">
+          <span style="font-family:'JetBrains Mono', monospace; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; padding:13px 22px; color:#A89274">Daylight</span>
+          <span style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; padding:13px 22px; background:#E8A917; color:#171208; border-left:1px solid #E8A917">Moonlight</span>
+          <span style="font-family:'JetBrains Mono', monospace; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; padding:13px 22px; color:#A89274; border-left:1px solid #E8A917">System</span>
+        </div>
+      </div>
+      <p style="font-size:16px; line-height:1.6; color:#A89274; margin:0; padding:0 24px 28px; max-width:70ch; text-wrap:pretty">On dark the active cell takes a solid amber fill with ink text rather than the translucent glow — <span style="font-family:'JetBrains Mono', monospace; font-size:14px">--amber-glow</span> drops to 12% opacity in moonlight and the selection would all but vanish. The frame borrows the amber too, since ink-on-black has nothing to sit against.</p>
+    </section>
+
+    <section style="border:2px solid #171208; background:#FFFDF6; margin-bottom:24px">
+      <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:#5C513D; padding:14px 24px; border-bottom:1px solid #171208">Where it goes</div>
+
+      <div style="padding:36px 24px; background:#F7F2E6; display:flex; flex-direction:column; gap:36px">
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.12em; text-transform:uppercase; color:#8A5E00; margin-bottom:12px">Recommended · footer, left of the links</div>
+          <div style="border:2px solid #171208; background:#F7F2E6">
+            <div style="height:52px; border-bottom:1px solid #D8CFB8; display:flex; align-items:center; justify-content:space-between; padding:0 18px">
+              <span style="display:flex; align-items:center; gap:8px">
+                <svg width="17" height="17" viewBox="0 0 100 100" aria-hidden="true"><polygon points="7,92 37,8 59,8 29,92" fill="#171208"></polygon><polygon points="45,92 75,8 93,8 63,92" fill="#171208"></polygon></svg>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700">lightning.fm</span>
+              </span>
+              <span style="display:flex; gap:14px; font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#5C513D"><span>Listen</span><span>Artists</span><span>Learn</span><span>Pricing</span><span>Start selling</span></span>
+            </div>
+            <div style="height:150px; display:flex; align-items:center; justify-content:center; font-family:'JetBrains Mono', monospace; font-size:11px; color:#8A8172; background:repeating-linear-gradient(45deg,#F7F2E6,#F7F2E6 8px,#EFE7D2 8px,#EFE7D2 16px)">page</div>
+            <div style="border-top:2px solid #171208; display:flex; align-items:center; justify-content:space-between; padding:16px 18px; gap:16px; flex-wrap:wrap">
+              <span style="display:inline-flex; border:1px solid #171208">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; padding:8px 11px; background:rgba(232,169,23,0.25); color:#8A5E00">Day</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; padding:8px 11px; color:#4A4232; border-left:1px solid #171208">Night</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; padding:8px 11px; color:#4A4232; border-left:1px solid #171208">Auto</span>
+              </span>
+              <span style="display:flex; gap:12px; font-family:'JetBrains Mono', monospace; font-size:10px; color:#5C513D"><span>Commitments</span><span>Learn</span><span>Wallets</span><span>GitHub</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.12em; text-transform:uppercase; color:#5C513D; margin-bottom:12px">Alternative · header, far left of the nav</div>
+          <div style="border:2px solid #171208; background:#F7F2E6">
+            <div style="height:56px; border-bottom:2px solid #171208; display:flex; align-items:center; justify-content:space-between; padding:0 18px; gap:12px">
+              <span style="display:flex; align-items:center; gap:8px">
+                <svg width="17" height="17" viewBox="0 0 100 100" aria-hidden="true"><polygon points="7,92 37,8 59,8 29,92" fill="#171208"></polygon><polygon points="45,92 75,8 93,8 63,92" fill="#171208"></polygon></svg>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700">lightning.fm</span>
+              </span>
+              <span style="display:flex; align-items:center; gap:14px">
+                <span style="display:inline-flex; border:1px solid #171208">
+                  <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; padding:8px 10px; background:rgba(232,169,23,0.25); color:#8A5E00">Day</span>
+                  <span style="font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; padding:8px 10px; color:#4A4232; border-left:1px solid #171208">Night</span>
+                  <span style="font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; padding:8px 10px; color:#4A4232; border-left:1px solid #171208">Auto</span>
+                </span>
+                <span style="display:flex; gap:12px; font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#5C513D"><span>Listen</span><span>Artists</span><span>Learn</span><span>Pricing</span><span>Start selling</span></span>
+              </span>
+            </div>
+            <div style="height:150px; display:flex; align-items:center; justify-content:center; font-family:'JetBrains Mono', monospace; font-size:11px; color:#8A8172; background:repeating-linear-gradient(45deg,#F7F2E6,#F7F2E6 8px,#EFE7D2 8px,#EFE7D2 16px)">page</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid #171208; padding:24px; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:28px">
+        <p style="font-size:16px; line-height:1.6; color:#171208; margin:0; text-wrap:pretty">Put it in the footer. Theme is a set-once preference, not a destination. In the header it currently sits at the same weight as Pricing, which is a page you want people to visit — and after this change it is the widest thing in a nav that already carries five items.</p>
+        <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">If it has to stay in the header, put it at the far left of the nav group and use the compact form with a 1px border, so it reads as a utility rather than a sixth link. Never between the links and the CTA.</p>
+        <p style="font-size:16px; line-height:1.6; color:#4A4232; margin:0; text-wrap:pretty">On phones the compact control is 170px, which fits a footer row but not a nav bar. Footer placement means no mobile special case.</p>
+      </div>
+    </section>
+
+    <section style="border:2px solid #171208; background:#171208; padding:36px 32px">
+      <h2 style="font-family:'JetBrains Mono', monospace; font-size:13px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:#F5E6C8; margin:0 0 28px">Implementation notes</h2>
+      <div style="display:flex; flex-direction:column; gap:24px; max-width:76ch">
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">Semantics fix finding 17 for free</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">A <span style="font-family:'JetBrains Mono', monospace; font-size:14px">role="radiogroup"</span> with three <span style="font-family:'JetBrains Mono', monospace; font-size:14px">role="radio"</span> children and <span style="font-family:'JetBrains Mono', monospace; font-size:14px">aria-checked</span> removes the ambiguity entirely — each label names a state rather than an action, so there is no longer a mismatch between what the button says and what it reports. Add arrow-key navigation within the group.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">Three storage values, not two</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty"><span style="font-family:'JetBrains Mono', monospace; font-size:14px">lfm-theme</span> becomes <span style="font-family:'JetBrains Mono', monospace; font-size:14px">"daylight" | "moonlight" | "system"</span>. Absent means system, so a first-time visitor follows their OS. Existing stored values keep working — nothing to migrate.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">The pre-paint script has to resolve system</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">The inline script in <span style="font-family:'JetBrains Mono', monospace; font-size:14px">src/app/layout.tsx</span> currently only checks for the string <span style="font-family:'JetBrains Mono', monospace; font-size:14px">"moonlight"</span>. It now needs to add the class when the stored value is moonlight <span style="color:#F5E6C8">or</span> when it is missing/system and <span style="font-family:'JetBrains Mono', monospace; font-size:14px">matchMedia("(prefers-color-scheme: dark)")</span> matches. Miss this and every system-mode visitor gets a flash of the wrong theme on first paint.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">System mode is live, not read-once</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">Subscribe to the media query's <span style="font-family:'JetBrains Mono', monospace; font-size:14px">change</span> event while system is selected, so the page follows when macOS flips at sunset with the tab open. Unsubscribe when the user picks an explicit theme. Your existing <span style="font-family:'JetBrains Mono', monospace; font-size:14px">useSyncExternalStore</span> setup in <span style="font-family:'JetBrains Mono', monospace; font-size:14px">ThemeToggle.tsx</span> already has the right shape — add the media query as a second subscription source.</p>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:700; color:#E8A917; margin-bottom:8px">Also: the desktop app</div>
+          <p style="font-size:16px; line-height:1.65; color:#A89274; margin:0; text-wrap:pretty">Three states matter more there than on the web — a native app that ignores the OS appearance setting feels broken on macOS. Same control, same three values, read from the system appearance API rather than <span style="font-family:'JetBrains Mono', monospace; font-size:14px">matchMedia</span>.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1140,&quot;height&quot;:900}}">
+const PALETTES = {
+  daylight: { bg: "#F7F2E6", card: "#FFFDF6", text: "#171208", muted: "#5C513D", border: "#171208", amber: "#8A5E00" },
+  moonlight: { bg: "#0D0D0D", card: "#161616", text: "#F5E6C8", muted: "#8A775A", border: "#E8A917", amber: "#E8A917" },
+};
+
+const CHOICES = [
+  { value: "daylight", label: "Daylight" },
+  { value: "moonlight", label: "Moonlight" },
+  { value: "system", label: "System" },
+];
+
+class Component extends DCLogic {
+  state = { choice: "daylight", systemDark: false };
+
+  componentDidMount() {
+    this.mq = window.matchMedia("(prefers-color-scheme: dark)");
+    this.onChange = () => this.setState({ systemDark: this.mq.matches });
+    this.mq.addEventListener("change", this.onChange);
+    this.setState({ systemDark: this.mq.matches });
+  }
+
+  componentWillUnmount() {
+    if (this.mq) this.mq.removeEventListener("change", this.onChange);
+  }
+
+  cycle() {
+    const order = ["daylight", "moonlight", "system"];
+    const i = order.indexOf(this.state.choice);
+    this.setState({ choice: order[(i + 1) % order.length] });
+  }
+
+  renderVals() {
+    const { choice, systemDark } = this.state;
+    const resolved = choice === "system" ? (systemDark ? "moonlight" : "daylight") : choice;
+    const p = PALETTES[resolved];
+    const dark = resolved === "moonlight";
+    const order = ["daylight", "moonlight", "system"];
+    const nextChoice = order[(order.indexOf(choice) + 1) % order.length];
+
+    return {
+      p,
+      onCycle: () => this.cycle(),
+      isDay: choice === "daylight",
+      isNight: choice === "moonlight",
+      isAuto: choice === "system",
+      iconFill: dark ? "#F5E6C8" : "#171208",
+      cycleLabel: "Theme: " + choice + ". Change to " + nextChoice + ".",
+      nextHint: "next: " + nextChoice,
+      selected: choice,
+      resolved: choice === "system" ? resolved + " (from your OS)" : resolved,
+      options: CHOICES.map((c, i) => {
+        const active = c.value === choice;
+        return {
+          label: c.label,
+          checked: active ? "true" : "false",
+          onSelect: () => this.setState({ choice: c.value }),
+          bg: active ? (dark ? "#E8A917" : "rgba(232,169,23,0.25)") : "transparent",
+          fg: active ? (dark ? "#171208" : "#8A5E00") : p.muted,
+          weight: active ? 600 : 400,
+          divider: i === 0 ? "none" : "1px solid " + p.border,
+        };
+      }),
+    };
+  }
+}
+</script>
+</body>
+</html>
