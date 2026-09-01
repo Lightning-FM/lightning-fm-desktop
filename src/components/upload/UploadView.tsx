@@ -475,6 +475,7 @@ export function UploadView({ ownTrackCount = 0 }: UploadViewProps) {
           // Nostr t tags, description becomes the event content.
           extras: {
             description: track.description || null,
+            artist: track.artist || null,
             album: track.album || null,
             genre: track.genre || null,
             year: track.year || null,

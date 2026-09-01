@@ -26,6 +26,7 @@ pub struct AudioMetadata {
     pub sample_rate: Option<u32>,
     pub bit_depth: Option<u8>,
     pub channels: Option<u8>,
+    pub bitrate_kbps: Option<u32>,
     pub format: String,
 }
 
@@ -100,6 +101,7 @@ pub fn read_metadata(path: &Path) -> Result<AudioMetadata, String> {
         sample_rate: properties.sample_rate(),
         bit_depth: properties.bit_depth(),
         channels: properties.channels(),
+        bitrate_kbps: properties.audio_bitrate(),
         format,
     })
 }

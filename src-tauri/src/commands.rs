@@ -527,7 +527,18 @@ pub async fn upload_track(
         node_lock.as_ref().map(|node| node.node_id().to_string())
     };
 
-    let extras = extras.unwrap_or_default();
+    let mut extras = extras.unwrap_or_default();
+    // bitrate/format come from the file itself, not the form. Unreadable
+    // properties are not fatal — the tags are optional.
+    let meta_path = file_path.clone();
+    if let Ok(Ok(meta)) = tauri::async_runtime::spawn_blocking(move || {
+        crate::metadata::read_metadata(Path::new(&meta_path))
+    })
+    .await
+    {
+        extras.bitrate_kbps = meta.bitrate_kbps;
+        extras.format = Some(meta.format);
+    }
     let event_id = crate::relay::publish_track(
         client,
         &title,

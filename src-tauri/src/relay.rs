@@ -377,6 +377,10 @@ pub async fn fetch_catalog(client: &Client) -> Result<(Vec<TrackInfo>, std::coll
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct TrackExtras {
     pub description: Option<String>,
+    /// Display name of the performing artist. The pubkey's kind-0 profile
+    /// stays canonical; this tag exists so clients that read the kind-36787
+    /// vocabulary render a name without a profile lookup.
+    pub artist: Option<String>,
     pub album: Option<String>,
     pub genre: Option<String>,
     pub year: Option<String>,
@@ -394,6 +398,11 @@ pub struct TrackExtras {
     pub video_url: Option<String>,
     pub video_hash: Option<String>,
     pub video_mime: Option<String>,
+    /// Filled by the backend from the audio file, not the form. Emitted as
+    /// `bitrate` ("320kbps") and `format` ("flac") per the kind-36787
+    /// value conventions observed in the wild.
+    pub bitrate_kbps: Option<u32>,
+    pub format: Option<String>,
 }
 
 /// Publish a track metadata event (kind 31337)
@@ -467,6 +476,7 @@ pub async fn publish_track(
     // Descriptive metadata (task lfm_upload_form_drops_metadata): only
     // fields the artist actually filled produce tags.
     for (name, value) in [
+        ("artist", &extras.artist),
         ("album", &extras.album),
         ("genre", &extras.genre),
         ("year", &extras.year),
@@ -483,6 +493,26 @@ pub async fn publish_track(
     }
     if let Some(n) = extras.track_number {
         tags.push(Tag::custom(TagKind::custom("track_number"), vec![n.to_string()]));
+    }
+    // kind-36787 vocabulary alignment (task lfm_absorb_36787_tag_names):
+    // `alt`/`artist`/`bitrate`/`format`/`released` use that dialect's value
+    // conventions so existing music clients parse our events unmodified.
+    // Tag names only — we do not publish the kind itself.
+    let alt = match extras.artist.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+        Some(artist) => format!("Music track: {} by {}", title, artist),
+        None => format!("Music track: {}", title),
+    };
+    tags.push(Tag::custom(TagKind::custom("alt"), vec![alt]));
+    if let Some(year) = extras.year.as_deref().map(str::trim).filter(|y| !y.is_empty()) {
+        // Year-only is valid ISO 8601 reduced precision; the form collects
+        // no finer release date.
+        tags.push(Tag::custom(TagKind::custom("released"), vec![year.to_string()]));
+    }
+    if let Some(kbps) = extras.bitrate_kbps {
+        tags.push(Tag::custom(TagKind::custom("bitrate"), vec![format!("{}kbps", kbps)]));
+    }
+    if let Some(fmt) = extras.format.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        tags.push(Tag::custom(TagKind::custom("format"), vec![fmt.to_lowercase()]));
     }
     // Optional music video (Blossom-hosted). The plain `video` tag is what
     // our own parsers read; the imeta tag repeats the same facts NIP-92
